@@ -16,6 +16,7 @@
 #   ・キーワードが削除されたときにPOSTを消す
 
 
+import os
 import discord
 from discord.ext import commands
 import asyncio
@@ -184,8 +185,9 @@ SQL_init()
 #########################################
 
 # Token の設定
-tObj = open("token")
-TOKEN = tObj.read()
+# tObj = open("token")
+# TOKEN = tObj.read()
+TOKEN = os.getenv("TOKEN")
 
 # Intents / Client の設定 / channel初期化
 intents = discord.Intents.default()
