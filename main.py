@@ -1,8 +1,9 @@
 #########################################
 # TODO LIST
 #   ・一定時間が経過したPOSTは自動で削除する。（毎週月曜の夜）
+#   ・
+#   ・Error回避のtry except を作る。
 #
-#   ・Clear all コマンド
 #   ・Bot書き込み用Chを作るようマニュアルに書く
 #   ・Bot書き込み用Ch名を変更できるようにする
 #   ・## for TEST ##をクリーンする
@@ -14,6 +15,7 @@
 #   ・元メッセージが削除された場合POSTを消す
 #   ・ファイルを分割する
 #   ・ホストにデプロイする
+#   ・途中から参加／抜けるサーバに対応
 
 
 import os
@@ -53,16 +55,21 @@ sql.init()
 
 #########################################
 
-# Token の設定 debag
-#tObj = open("token")
-#TOKEN = tObj.read()
-Token の設定 fly.io
-TOKEN = os.getenv("TOKEN")
+# Local Tokenの設定 (for debag)
+try:
+    tObj = open("token")
+    TOKEN = tObj.read()
+# Token の設定 fly.io
+except:
+    TOKEN = os.getenv("TOKEN")
+
+#########################################
 
 # Intents / Client の設定 / channel初期化
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
+intents.guilds = True
 # client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
 
@@ -75,12 +82,7 @@ async def on_ready():
 
     if guilds is not None:
         for g in guilds:
-            for c in g.channels:
-                if c.name == CHANNEL:
-                    ## guild id -> channel を紐づけ
-                    global Guild_ChID
-                    Guild_ChID[g.id] = c.id
-                    break
+            register_guild_ch(g)
     print("Test Bot logged in")
 
 
@@ -137,6 +139,17 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
             await deactivate_post(message)
 
 
+# リアクション追加に対して反応
+@client.event
+async def on_guild_join(guild: discord.guild):
+    register_guild_ch(guild)
+
+
+@client.event
+async def on_guild_remove(guild: discord.guild):
+    clear_all_post(guild.id)
+
+
 # リアクション削除に対して反応
 @client.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
@@ -158,6 +171,14 @@ async def clear(ctx):
 #########################################
 # Functions
 #########################################
+
+
+def register_guild_ch(guild):
+    for c in guild.channels:
+        if c.name == CHANNEL:
+            ## guild id -> channel を紐づけ
+            global Guild_ChID
+            Guild_ChID[guild.id] = c.id
 
 
 # メッセージが投稿・編集された時の処理
