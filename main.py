@@ -17,10 +17,14 @@
 
 
 import os
+
+##
 import discord
 from discord.ext import commands
 import asyncio
-import sqlite3
+
+##
+import lib.sql as sql
 
 #########################################
 # USER 環境変数の設定
@@ -34,7 +38,6 @@ INACTIVE_COLOR = discord.Colour.dark_grey()
 INACTIVE_MARKUP_SYMBOLS = "||"
 #########################################
 # System 環境変数の設定
-DB_NAME = "System.db"
 
 # Discord.py パラメータ.
 REACTION_EVENT_TYPE = {"add": "REACTION_ADD", "del": "REACTION_REMOVE"}
@@ -44,150 +47,16 @@ BOT_PREFIX = "!"
 CH_ID: str
 #########################################
 
-# クエリ
-CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS
-        post_list(
-            post_message_ID INTEGER PRIMARY KEY,
-            cue_message_ID INTEGER,
-            created_at TEXT NOT NULL,
-            author INTEGER NOT NULL)
-    """
-INSERT_RECORDS = """
-    INSERT INTO
-    post_list (post_message_ID, cue_message_ID, created_at, author)
-    VALUES (:post_message_ID, :cue_message_ID, :created_at, :author);
-    """
-SELECT_ALL_VALUE = "SELECT * FROM post_list;"
-SELECT_VALUE_BY_CUE_MESSAGE_ID = """
-    SELECT * FROM post_list
-    where cue_message_ID=:ID;
-"""
-SELECT_VALUE_BY_POST_MESSAGE_ID = """
-    SELECT * FROM post_list
-    where post_message_ID=:ID;
-"""
-DELETE_ALL_VALUE = "DELETE FROM post_list;"
-DELETE_VALUE_BY_CUE_MESSAGE_ID = """
-    DELETE FROM post_list
-    where cue_message_ID=:ID;
-"""
-DELETE_VALUE_BY_POST_MESSAGE_ID = """
-    DELETE FROM post_list
-    where post_message_ID=:ID;
-"""
-# SELECT_TYPE_OF_COLUMNS = "SELECT typeof(t1), typeof(t2),typeof(t3),typeof(t4),typeof(t5) FROM example;"
-
-
-#########################################
-# データクラス定義
-#########################################
-class record:
-    row = {}
-
-    def __init__(self):
-        self.row = {}
-
-    def __init__(self, post_message_ID, cue_message_ID, created_at, author):
-        self.row = {
-            "post_message_ID": post_message_ID,
-            "cue_message_ID": cue_message_ID,
-            "created_at": created_at,
-            "author": author,
-        }
-
-
-# DB操作Function
-def SQL_init():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(CREATE_TABLE)
-    conn.commit()
-    cur.execute(SELECT_ALL_VALUE)
-    for r in cur:
-        print(*r)
-
-    conn.close()
-
-
-def SQL_insert_record(cue, post):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    _record = record(post.id, cue.id, cue.created_at, cue.author.id)
-    cur.execute(INSERT_RECORDS, _record.row)
-    conn.commit()
-    conn.close()
-
-
-def SQL_select_all_records():
-    _records = []
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_ALL_VALUE)
-    for row in cur:
-        if row is not None:
-            _records.append(record(*row))
-    conn.close()
-    return _records
-
-
-def SQL_select_record_by_cue_message_id(id):
-    _record = None
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_VALUE_BY_CUE_MESSAGE_ID, {"ID": id})
-    _row = cur.fetchone()
-    if _row is not None:
-        _record = record(*_row)
-    conn.close()
-    return _record
-
-
-def SQL_select_record_by_post_message_id(id):
-    _record = None
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_VALUE_BY_POST_MESSAGE_ID, {"ID": id})
-    _row = cur.fetchone()
-    if _row is not None:
-        _record = record(*_row)
-    conn.close()
-    return _record
-
-
-def SQL_delete_all_records():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_ALL_VALUE)
-    conn.commit()
-    conn.close()
-
-
-def SQL_delete_record_by_cue_message_id(id):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_VALUE_BY_CUE_MESSAGE_ID, {"ID": id})
-    conn.commit()
-    conn.close()
-
-
-def SQL_delete_record_by_post_message_id(id):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_VALUE_BY_POST_MESSAGE_ID, {"ID": id})
-    conn.commit()
-    conn.close()
-
-
 # DBの初期接続
-SQL_init()
+sql.init()
 
 #########################################
 
-# Token の設定
-# tObj = open("token")
-# TOKEN = tObj.read()
-TOKEN = os.getenv("TOKEN")
+# Token の設定 debag
+tObj = open("token")
+TOKEN = tObj.read()
+# Token の設定 fly.io
+# TOKEN = os.getenv("TOKEN")
 
 # Intents / Client の設定 / channel初期化
 intents = discord.Intents.default()
@@ -215,6 +84,7 @@ async def on_ready():
 # これは動く
 @client.listen("on_message")
 async def message_listener(message):
+    print(type(message.guild))
     if message.author.bot:
         return
     else:
@@ -237,14 +107,14 @@ async def on_raw_message_edit(payload):
 @client.event
 async def on_raw_message_delete(payload):
     # 削除メッセージがBOTの場合の処理
-    _record = SQL_select_record_by_post_message_id(payload.message_id)
+    _record = sql.select_record_by_post_message_id(payload.message_id)
     if _record is not None:
         await delete_post_by_record(_record, POST=False, DB=True)
     else:
         pass
 
     # 削除メッセージがCueの場合の処理
-    _record = SQL_select_record_by_cue_message_id(payload.message_id)
+    _record = sql.select_record_by_cue_message_id(payload.message_id)
     if _record is not None:
         await delete_post_by_record(_record, POST=True, DB=True)
     else:
@@ -287,7 +157,7 @@ async def clear(ctx):
 
 # メッセージが投稿・編集された時の処理
 async def check_and_activate(cue):
-    _row = SQL_select_record_by_cue_message_id(cue.id)
+    _row = sql.select_record_by_cue_message_id(cue.id)
 
     if _row is None:  # 初回登録時の判定
         # KEYWORDを発言したら動く処理
@@ -300,7 +170,7 @@ async def check_and_activate(cue):
             )
 
             msg = await client.get_channel(CH_ID).send(embed=_embed)
-            SQL_insert_record(cue=cue, post=msg)
+            sql.insert_record(cue=cue, post=msg)
         else:
             None
 
@@ -315,7 +185,7 @@ async def check_and_activate(cue):
             else:
                 await deactivate_post(target=post, base=cue)
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            SQL_delete_record_by_post_message_id(post.id)
+            sql.delete_record_by_post_message_id(post.id)
             await post.delete()
 
     return
@@ -413,7 +283,7 @@ def isFirstReaction(message, event_type):
 
 # Clear all post
 async def clear_all_post():
-    records = SQL_select_all_records()
+    records = sql.select_all_records()
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
@@ -425,7 +295,7 @@ async def delete_post_by_record(r, POST=False, DB=False):
         )
         await message.delete()
     if DB:
-        SQL_delete_record_by_post_message_id(r.row["post_message_ID"])
+        sql.delete_record_by_post_message_id(r.row["post_message_ID"])
 
 
 # post_message_ID, cue_message_ID, created_at, author
