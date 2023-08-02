@@ -24,7 +24,7 @@ from discord.ext import commands
 import asyncio
 
 ##
-import lib.sql as sql
+import sql as sql
 
 #########################################
 # USER 環境変数の設定
