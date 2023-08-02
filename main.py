@@ -1,19 +1,19 @@
 #########################################
 # TODO LIST
 #   ・一定時間が経過したPOSTは自動で削除する。（毎週月曜の夜）
-#   ・ファイルを分割する
-#   ・ホストにデプロイする
-#   ・元メッセージが削除された場合
 #
-#   ・Clear all コ
+#   ・Clear all コマンド
 #   ・Bot書き込み用Chを作るようマニュアルに書く
 #   ・Bot書き込み用Ch名を変更できるようにする
 #   ・## for TEST ##をクリーンする
-#
+#   ・cogを使ってコマンドを移動する。
 # DONE
 #   ・BOTのメッセージ全削除コマンドを追加する
 #   ・BOTのメッセージが削除されたときにDBから削除する
 #   ・キーワードが削除されたときにPOSTを消す
+#   ・元メッセージが削除された場合POSTを消す
+#   ・ファイルを分割する
+#   ・ホストにデプロイする
 
 
 import os
@@ -45,6 +45,7 @@ BOT_PREFIX = "!"
 
 # Global 変数の定義
 CH_ID: str
+Guild_ChID = {}
 #########################################
 
 # DBの初期接続
@@ -53,10 +54,10 @@ sql.init()
 #########################################
 
 # Token の設定 debag
-tObj = open("token")
-TOKEN = tObj.read()
-# Token の設定 fly.io
-# TOKEN = os.getenv("TOKEN")
+#tObj = open("token")
+#TOKEN = tObj.read()
+Token の設定 fly.io
+TOKEN = os.getenv("TOKEN")
 
 # Intents / Client の設定 / channel初期化
 intents = discord.Intents.default()
@@ -69,12 +70,17 @@ client = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
 # 起動時に動作する処理
 @client.event
 async def on_ready():
-    # 書き込み対象チャンネル取得、ログイン通知
-    for ch in client.get_all_channels():
-        if ch.name == CHANNEL:
-            global CH_ID
-            CH_ID = ch.id
-            break
+    # 参加しているギルドリストを取得
+    guilds = client.guilds
+
+    if guilds is not None:
+        for g in guilds:
+            for c in g.channels:
+                if c.name == CHANNEL:
+                    ## guild id -> channel を紐づけ
+                    global Guild_ChID
+                    Guild_ChID[g.id] = c.id
+                    break
     print("Test Bot logged in")
 
 
@@ -84,7 +90,6 @@ async def on_ready():
 # これは動く
 @client.listen("on_message")
 async def message_listener(message):
-    print(type(message.guild))
     if message.author.bot:
         return
     else:
@@ -105,16 +110,16 @@ async def on_raw_message_edit(payload):
 
 # メッセージが削除された場合に反応
 @client.event
-async def on_raw_message_delete(payload):
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     # 削除メッセージがBOTの場合の処理
-    _record = sql.select_record_by_post_message_id(payload.message_id)
+    _record = sql.select_record_by_post_message(payload.message_id, payload.guild_id)
     if _record is not None:
         await delete_post_by_record(_record, POST=False, DB=True)
     else:
         pass
 
     # 削除メッセージがCueの場合の処理
-    _record = sql.select_record_by_cue_message_id(payload.message_id)
+    _record = sql.select_record_by_cue_message(payload.message_id, payload.guild_id)
     if _record is not None:
         await delete_post_by_record(_record, POST=True, DB=True)
     else:
@@ -123,8 +128,8 @@ async def on_raw_message_delete(payload):
 
 # リアクション追加に対して反応
 @client.event
-async def on_raw_reaction_add(payload):
-    if payload.channel_id == CH_ID:
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.channel_id == Guild_ChID[payload.guild_id]:
         message = await get_message_by_payload(payload)
         if message.author == client.user and isFirstReaction(
             message, payload.event_type
@@ -134,8 +139,8 @@ async def on_raw_reaction_add(payload):
 
 # リアクション削除に対して反応
 @client.event
-async def on_raw_reaction_remove(payload):
-    if payload.channel_id == CH_ID:
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    if payload.channel_id == Guild_ChID[payload.guild_id]:
         message = await get_message_by_payload(payload)
         if message.author == client.user and isNullReaction(message):
             await activate_post(message)
@@ -143,7 +148,7 @@ async def on_raw_reaction_remove(payload):
 
 @client.command()
 async def clear(ctx):
-    await clear_all_post()
+    await clear_all_post(ctx.guild.id)
     msg = await ctx.send("--- all posts cleared---")
     await asyncio.sleep(COMMAND_FB_TIME)
     await msg.delete()
@@ -156,8 +161,8 @@ async def clear(ctx):
 
 
 # メッセージが投稿・編集された時の処理
-async def check_and_activate(cue):
-    _row = sql.select_record_by_cue_message_id(cue.id)
+async def check_and_activate(cue: discord.Message):
+    _row = sql.select_record_by_cue_message(cue.id, cue.guild.id)
 
     if _row is None:  # 初回登録時の判定
         # KEYWORDを発言したら動く処理
@@ -169,15 +174,15 @@ async def check_and_activate(cue):
                 value=cue.content.replace(KEYWORD, ""),
             )
 
-            msg = await client.get_channel(CH_ID).send(embed=_embed)
+            msg = await client.get_channel(Guild_ChID[cue.guild.id]).send(embed=_embed)
             sql.insert_record(cue=cue, post=msg)
         else:
             None
 
     else:  # 2回目以降の処理
-        post = await client.get_channel(CH_ID).fetch_message(
-            _row.row["post_message_ID"]
-        )
+        g_id = Guild_ChID[_row.row["guild"]]
+        m_id = _row.row["post_message_ID"]
+        post = await client.get_channel(g_id).fetch_message(m_id)
 
         if KEYWORD in cue.content:
             if isNullReaction(post):
@@ -185,7 +190,7 @@ async def check_and_activate(cue):
             else:
                 await deactivate_post(target=post, base=cue)
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            sql.delete_record_by_post_message_id(post.id)
+            sql.delete_record_by_post_message(post.id, post.guild.id)
             await post.delete()
 
     return
@@ -282,20 +287,27 @@ def isFirstReaction(message, event_type):
 
 
 # Clear all post
-async def clear_all_post():
-    records = sql.select_all_records()
+async def clear_all_post(g_id):
+    records = sql.select_guild_all_records(g_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
 
 async def delete_post_by_record(r, POST=False, DB=False):
+    m_id = r.row["post_message_ID"]
+    g_id = r.row["guild"]
+    ch_id = Guild_ChID[g_id]
+
     if POST:
-        message = await client.get_channel(CH_ID).fetch_message(
-            r.row["post_message_ID"]
-        )
-        await message.delete()
+        try:
+            message = await client.get_channel(ch_id).fetch_message(m_id)
+        except:
+            message = None
+
+        if message is not None:
+            await message.delete()
     if DB:
-        sql.delete_record_by_post_message_id(r.row["post_message_ID"])
+        sql.delete_record_by_post_message(m_id, g_id)
 
 
 # post_message_ID, cue_message_ID, created_at, author

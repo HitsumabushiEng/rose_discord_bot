@@ -1,0 +1,18 @@
+# signup
+flyctl auth signup
+
+# TOKENを設定
+flyctl secrets set TOKEN=
+
+# 起動しているマシーンの数を表示
+flyctl scale show
+
+# アプリを停止
+flyctl destroy rose-bot
+
+# アプリをDeploy (仮想マシン上で展開)
+flyctl deploy
+
+# アプリをLaunch (起動)
+flyctl launch
+
