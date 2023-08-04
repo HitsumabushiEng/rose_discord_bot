@@ -1,7 +1,6 @@
 #########################################
 # TODO LIST
 #   ・一定時間が経過したPOSTは自動で削除する。（毎週月曜の夜）
-#   ・
 #   ・Error回避のtry except を作る。
 #
 #   ・Bot書き込み用Chを作るようマニュアルに書く
@@ -16,7 +15,9 @@
 #   ・ファイルを分割する
 #   ・ホストにデプロイする
 #   ・途中から参加／抜けるサーバに対応
-
+#   ・！clearコマンドは、それ以外を含まない投稿のみとする。
+#   ・！clear_allコマンドは、管理者と特定の権限（メッセージ削除）を持つ人のみ実行可能にする。
+#   ・！clearコマンドは、実行者の自分のポストのみを削除
 
 import os
 
@@ -29,11 +30,15 @@ import asyncio
 import sql as sql
 
 #########################################
+DEBUG_MODE = False
+# DEBUG_MODE = True
+
+#########################################
 # USER 環境変数の設定
 # KEYWORD = "#予約"
 KEYWORD = "📌"
-CHANNEL = "予約まとめ"
-COMMAND_FB_TIME = 3  # unit:second
+CHANNEL = "簡易ピン留め"
+COMMAND_FB_TIME = 2  # unit:second
 # DONE_EMOJI = "\N{SMILING FACE WITH OPEN MOUTH AND TIGHTLY-CLOSED EYES}"
 ACTIVE_COLOR = discord.Colour.dark_gold()
 INACTIVE_COLOR = discord.Colour.dark_grey()
@@ -46,22 +51,21 @@ REACTION_EVENT_TYPE = {"add": "REACTION_ADD", "del": "REACTION_REMOVE"}
 BOT_PREFIX = "!"
 
 # Global 変数の定義
-CH_ID: str
-Guild_ChID = {}
+guild_channel_map = {}
 #########################################
 
 # DBの初期接続
 sql.init()
 
 #########################################
-
-# Local Tokenの設定 (for debag)
-try:
-    tObj = open("token")
+# Token の設定
+if DEBUG_MODE:  # Local Token
+    tObj = open("token_dev")  # for Earnest
+    #   tObj = open("token")      #for Rose
     TOKEN = tObj.read()
-# Token の設定 fly.io
-except:
+else:  # fly.io
     TOKEN = os.getenv("TOKEN")
+
 
 #########################################
 
@@ -77,7 +81,7 @@ client = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
 # 起動時に動作する処理
 @client.event
 async def on_ready():
-    # 参加しているギルドリストを取得
+    # 参加している各ギルドの書き込み対象chを取得、保持
     guilds = client.guilds
 
     if guilds is not None:
@@ -89,9 +93,8 @@ async def on_ready():
 # メッセージ受信時に動作する処理
 # @client.event
 # async def on_message(message):
-# これは動く
 @client.listen("on_message")
-async def message_listener(message):
+async def message_listener(message: discord.Message):
     if message.author.bot:
         return
     else:
@@ -101,7 +104,7 @@ async def message_listener(message):
 
 # メッセージ編集時に動作する処理
 @client.event
-async def on_raw_message_edit(payload):
+async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     message = await get_message_by_payload(payload)
     if message.author.bot:
         return
@@ -128,15 +131,16 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         pass
 
 
+#########################[ここまでリファクタリングした]##################
+
+
 # リアクション追加に対して反応
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    if payload.channel_id == Guild_ChID[payload.guild_id]:
-        message = await get_message_by_payload(payload)
-        if message.author == client.user and isFirstReaction(
-            message, payload.event_type
-        ):
-            await deactivate_post(message)
+    #    if payload.channel_id == guild_channel_map[payload.guild_id]:
+    message = await get_message_by_payload(payload)
+    if message.author == client.user and isFirstReaction(message, payload.event_type):
+        await deactivate_post(message)
 
 
 # リアクション追加に対して反応
@@ -147,13 +151,13 @@ async def on_guild_join(guild: discord.guild):
 
 @client.event
 async def on_guild_remove(guild: discord.guild):
-    clear_all_post(guild.id)
+    clear_guild_all_post(guild.id)
 
 
 # リアクション削除に対して反応
 @client.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    if payload.channel_id == Guild_ChID[payload.guild_id]:
+    if payload.channel_id == guild_channel_map[payload.guild_id]:
         message = await get_message_by_payload(payload)
         if message.author == client.user and isNullReaction(message):
             await activate_post(message)
@@ -161,11 +165,28 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 
 @client.command()
 async def clear(ctx):
-    await clear_all_post(ctx.guild.id)
-    msg = await ctx.send("--- all posts cleared---")
-    await asyncio.sleep(COMMAND_FB_TIME)
-    await msg.delete()
-    await ctx.message.delete()
+    if ctx.message.content == BOT_PREFIX + "clear":  # コマンドだけに限定。
+        await clear_user_guild_post(ctx.guild.id, ctx.author.id)
+        msg = await ctx.send("--- your posts cleared ---")
+        await asyncio.sleep(COMMAND_FB_TIME)
+        await msg.delete()
+        await ctx.message.delete()
+    else:
+        pass
+
+
+@client.command()
+@commands.has_permissions(manage_messages=True)
+# @commands.is_owner()
+async def clear_all(ctx):
+    if ctx.message.content == BOT_PREFIX + "clear_all":  # コマンドだけに限定。
+        await clear_guild_all_post(ctx.guild.id)
+        msg = await ctx.send("--- all posts cleared ---")
+        await asyncio.sleep(COMMAND_FB_TIME)
+        await msg.delete()
+        await ctx.message.delete()
+    else:
+        pass
 
 
 #########################################
@@ -173,55 +194,66 @@ async def clear(ctx):
 #########################################
 
 
-def register_guild_ch(guild):
-    for c in guild.channels:
+def register_guild_ch(_g: discord.Guild):
+    for c in _g.channels:
         if c.name == CHANNEL:
             ## guild id -> channel を紐づけ
-            global Guild_ChID
-            Guild_ChID[guild.id] = c.id
+            global guild_channel_map
+            guild_channel_map[_g.id] = c.id
 
 
 # メッセージが投稿・編集された時の処理
-async def check_and_activate(cue: discord.Message):
-    _row = sql.select_record_by_cue_message(cue.id, cue.guild.id)
+async def check_and_activate(_cue: discord.Message):
+    _record = sql.select_record_by_cue_message(_cue.id, _cue.guild.id)
 
-    if _row is None:  # 初回登録時の判定
-        # KEYWORDを発言したら動く処理
-        if KEYWORD in cue.content:
-            _embed = discord.Embed()
-            _embed.color = ACTIVE_COLOR
-            _embed.add_field(
-                name=cue.author.display_name,
-                value=cue.content.replace(KEYWORD, ""),
-            )
-
-            msg = await client.get_channel(Guild_ChID[cue.guild.id]).send(embed=_embed)
-            sql.insert_record(cue=cue, post=msg)
+    if _record is None:  # DBに書き込み元メッセージの情報がない場合
+        if KEYWORD in _cue.content:
+            await new_post(_cue)
         else:
-            None
+            pass
 
-    else:  # 2回目以降の処理
-        g_id = Guild_ChID[_row.row["guild"]]
-        m_id = _row.row["post_message_ID"]
-        post = await client.get_channel(g_id).fetch_message(m_id)
+    else:  # DBに書き込み元メッセージの情報がある場合
+        c_id = guild_channel_map[_record.row["guild"]]
+        m_id = _record.row["post_message_ID"]
 
-        if KEYWORD in cue.content:
-            if isNullReaction(post):
-                await activate_post(target=post, base=cue)
-            else:
-                await deactivate_post(target=post, base=cue)
+        try:
+            post = await client.get_channel(c_id).fetch_message(m_id)
+        except:  # Bot停止中にPostが削除されており、404 Not found.
+            post = None
+
+        if KEYWORD in _cue.content:
+            match post:
+                case None:
+                    await new_post(_cue)
+                case case if isNullReaction(case):
+                    await activate_post(target=post, base=_cue)
+                case _:
+                    await deactivate_post(target=post, base=_cue)
+
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            sql.delete_record_by_post_message(post.id, post.guild.id)
-            await post.delete()
+            await delete_post_by_record(_record, POST=True, DB=True)
 
     return
 
 
-# リアクション時のメッセージ取得
+# イベントペイロードからメッセージを取得
 async def get_message_by_payload(payload):
     txt_channel = client.get_channel(payload.channel_id)
     message = await txt_channel.fetch_message(payload.message_id)
     return message
+
+
+# ポストの新規投稿
+async def new_post(_cue):
+    _embed = discord.Embed()
+    _embed.color = ACTIVE_COLOR
+    _embed.add_field(
+        name=_cue.author.display_name,
+        value=_cue.content.replace(KEYWORD, ""),
+    )
+
+    msg = await client.get_channel(guild_channel_map[_cue.guild.id]).send(embed=_embed)
+    sql.insert_record(cue=_cue, post=msg)
 
 
 # InactiveになったポストのActivate
@@ -247,11 +279,11 @@ async def activate_post(target, base=None):
 async def deactivate_post(target, base=None):
     _es = []
 
-    if base is None:
+    if base is None:  # リアクション付与時の動作
         base = target
         _es = gen_embeds(base, isActive=False)
 
-    else:
+    else:  # すでにInactiveなPostの書き換え
         e = discord.Embed()
         e.color = INACTIVE_COLOR
         _name = (
@@ -307,9 +339,16 @@ def isFirstReaction(message, event_type):
     )
 
 
-# Clear all post
-async def clear_all_post(g_id):
+# Clear all posts
+async def clear_guild_all_post(g_id):
     records = sql.select_guild_all_records(g_id)
+    for r in records:
+        await delete_post_by_record(r, POST=True, DB=True)
+
+
+# Clear own posts
+async def clear_user_guild_post(g_id, u_id):
+    records = sql.select_user_guild_records(g_id, u_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
@@ -317,7 +356,7 @@ async def clear_all_post(g_id):
 async def delete_post_by_record(r, POST=False, DB=False):
     m_id = r.row["post_message_ID"]
     g_id = r.row["guild"]
-    ch_id = Guild_ChID[g_id]
+    ch_id = guild_channel_map[g_id]
 
     if POST:
         try:

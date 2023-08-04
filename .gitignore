@@ -2,6 +2,7 @@
 
 # token のアップロード禁止
 token
+token_dev
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

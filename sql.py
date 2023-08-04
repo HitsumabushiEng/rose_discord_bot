@@ -45,6 +45,8 @@ INSERT_RECORDS = """
     """
 SELECT_ALL_VALUE = "SELECT * FROM post_list;"
 SELECT_GUILD_ALL_VALUE = "SELECT * FROM post_list where guild=:guild;"
+SELECT_USER_GUILD_VALUE = "SELECT * FROM post_list where guild=:guild AND author=:author;"
+
 SELECT_VALUE_BY_CUE_MESSAGE = """
     SELECT * FROM post_list
     where cue_message_ID=:ID AND guild=:guild;
@@ -100,6 +102,17 @@ def select_guild_all_records(g_id) -> list[record]:
     conn.close()
     return _records
 
+def select_user_guild_records(g_id,u_id) -> list[record]:
+    _records = []
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id,"author":u_id})
+    for row in cur:
+        if row is not None:
+            _records.append(record(*row))
+    conn.close()
+    return _records
+
 
 def select_record_by_cue_message(
     m_id: discord.Message.id, g_id: discord.Guild.id
@@ -127,16 +140,6 @@ def select_record_by_post_message(
         _record = record(*_row)
     conn.close()
     return _record
-
-
-## 未使用Funciton
-def delete_guild_all_records(guild: discord.guild):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_GUILD_ALL_VALUE, {"guild": guild.id})
-    conn.commit()
-    conn.close()
-
 
 #######
 

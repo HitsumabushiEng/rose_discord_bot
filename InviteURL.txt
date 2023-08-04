@@ -1,1 +1,5 @@
-https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=2147822656&scope=bot
+Rose
+https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=339008&scope=bot
+
+Earnest
+https://discord.com/api/oauth2/authorize?client_id=1136489278562652191&permissions=339008&scope=bot
