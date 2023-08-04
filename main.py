@@ -47,8 +47,10 @@ INACTIVE_MARKUP_SYMBOLS = "||"
 # System 環境変数の設定
 
 # Discord.py パラメータ.
-REACTION_EVENT_TYPE = {"add": "REACTION_ADD", "del": "REACTION_REMOVE"}
 BOT_PREFIX = "!"
+
+ERROR_MESSAGE = "function {} failed"
+MESSAGE_LINK = "https://discord.com/channels/{}/{}/{}"
 
 # Global 変数の定義
 guild_channel_map = {}
@@ -65,7 +67,6 @@ if DEBUG_MODE:  # Local Token
     TOKEN = tObj.read()
 else:  # fly.io
     TOKEN = os.getenv("TOKEN")
-
 
 #########################################
 
@@ -88,6 +89,17 @@ async def on_ready():
         for g in guilds:
             register_guild_ch(g)
     print("Test Bot logged in")
+
+
+# クライアントに追加 / 削除時に反応
+@client.event
+async def on_guild_join(guild: discord.guild):
+    register_guild_ch(guild)
+
+
+@client.event
+async def on_guild_remove(guild: discord.guild):
+    await clear_guild_all_post(guild.id)
 
 
 # メッセージ受信時に動作する処理
@@ -131,36 +143,26 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         pass
 
 
-#########################[ここまでリファクタリングした]##################
-
-
 # リアクション追加に対して反応
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    #    if payload.channel_id == guild_channel_map[payload.guild_id]:
-    message = await get_message_by_payload(payload)
-    if message.author == client.user and isFirstReaction(message, payload.event_type):
-        await deactivate_post(message)
-
-
-# リアクション追加に対して反応
-@client.event
-async def on_guild_join(guild: discord.guild):
-    register_guild_ch(guild)
-
-
-@client.event
-async def on_guild_remove(guild: discord.guild):
-    clear_guild_all_post(guild.id)
+    if (
+        payload.channel_id == guild_channel_map[payload.guild_id]
+    ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
+        message = await get_message_by_payload(payload)
+        if message.author == client.user and isFirstReactionAdd(message):
+            await update_post(message, isActive=False)
 
 
 # リアクション削除に対して反応
 @client.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    if payload.channel_id == guild_channel_map[payload.guild_id]:
+    if (
+        payload.channel_id == guild_channel_map[payload.guild_id]
+    ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await get_message_by_payload(payload)
         if message.author == client.user and isNullReaction(message):
-            await activate_post(message)
+            await update_post(message, isActive=True)
 
 
 @client.command()
@@ -226,9 +228,9 @@ async def check_and_activate(_cue: discord.Message):
                 case None:
                     await new_post(_cue)
                 case case if isNullReaction(case):
-                    await activate_post(target=post, base=_cue)
+                    await update_post(target=post, base=_cue, isActive=True)
                 case _:
-                    await deactivate_post(target=post, base=_cue)
+                    await update_post(target=post, base=_cue, isActive=False)
 
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
             await delete_post_by_record(_record, POST=True, DB=True)
@@ -244,67 +246,61 @@ async def get_message_by_payload(payload):
 
 
 # ポストの新規投稿
-async def new_post(_cue):
-    _embed = discord.Embed()
-    _embed.color = ACTIVE_COLOR
-    _embed.add_field(
-        name=_cue.author.display_name,
-        value=_cue.content.replace(KEYWORD, ""),
-    )
-
-    msg = await client.get_channel(guild_channel_map[_cue.guild.id]).send(embed=_embed)
-    sql.insert_record(cue=_cue, post=msg)
+async def new_post(_cue: discord.Message):
+    _embed = gen_embed_from_message(_cue, isActive=True)
+    try:
+        msg = await client.get_channel(guild_channel_map[_cue.guild.id]).send(
+            embed=_embed
+        )
+        sql.insert_record(cue=_cue, post=msg)
+    except:
+        print(ERROR_MESSAGE.format("new_post()"))
 
 
 # InactiveになったポストのActivate
-async def activate_post(target, base=None):
+async def update_post(
+    target: discord.Message, base: discord.Message = None, isActive: bool = True
+):
     _es = []
 
-    if base is None:
-        base = target
-        _es = gen_embeds(base, isActive=True)
+    if base is None:  # リアクションの変化によるActive/Deactiveの変更
+        _es = update_embeds(target, isActive=isActive)
 
+    else:  # 新規投稿、既存メッセージの編集によるポストの追加
+        e = gen_embed_from_message(base, isActive=isActive)
+        _es.append(e)
+    try:
+        await target.edit(embeds=_es)
+    except:
+        print(ERROR_MESSAGE.format("update_post()"))
+
+
+def gen_embed_from_message(message: discord.Message, isActive: bool) -> discord.Embed:
+    _e = discord.Embed()
+    _n = message.author.display_name
+    _n = (
+        _n
+        + "   :   "
+        + MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
+    )
+
+    _v = message.content.replace(KEYWORD, "")
+
+    if isActive:
+        _e.color = ACTIVE_COLOR
     else:
-        e = discord.Embed()
-        e.color = ACTIVE_COLOR
-        _name = base.author.display_name
-        _value = base.content.replace(KEYWORD, "")
-        e.add_field(name=_name, value=_value)
-        _es.append(e)
-
-    await target.edit(embeds=_es)
+        _e.color = INACTIVE_COLOR
+        _n = INACTIVE_MARKUP_SYMBOLS + _n + INACTIVE_MARKUP_SYMBOLS
+        _v = INACTIVE_MARKUP_SYMBOLS + _v + INACTIVE_MARKUP_SYMBOLS
+    _e.add_field(name=_n, value=_v)
+    return _e
 
 
-# ポストのDeactivate
-async def deactivate_post(target, base=None):
+def update_embeds(target: discord.Message, isActive: bool):
     _es = []
-
-    if base is None:  # リアクション付与時の動作
-        base = target
-        _es = gen_embeds(base, isActive=False)
-
-    else:  # すでにInactiveなPostの書き換え
-        e = discord.Embed()
-        e.color = INACTIVE_COLOR
-        _name = (
-            INACTIVE_MARKUP_SYMBOLS + base.author.display_name + INACTIVE_MARKUP_SYMBOLS
-        )
-        _value = (
-            INACTIVE_MARKUP_SYMBOLS
-            + base.content.replace(KEYWORD, "")
-            + INACTIVE_MARKUP_SYMBOLS
-        )
-        e.add_field(name=_name, value=_value)
-        _es.append(e)
-
-    await target.edit(embeds=_es)
-
-
-def gen_embeds(base, isActive):
-    i = 0
-    _es = []
-    if isActive:  # generate Active post embeds
-        for e in base.embeds:
+    for e in target.embeds:
+        i = 0
+        if isActive:  # generate Active post embeds
             e.color = ACTIVE_COLOR
             for f in e.fields:
                 _name = f.name.replace(INACTIVE_MARKUP_SYMBOLS, "")
@@ -312,9 +308,7 @@ def gen_embeds(base, isActive):
                 inline = f.inline
                 e.set_field_at(i, name=_name, value=_value, inline=inline)
                 i += 1
-            _es.append(e)
-    else:  # generate Inactive post embeds
-        for e in base.embeds:
+        else:  # generate Inactive post embeds
             e.color = INACTIVE_COLOR
             for f in e.fields:
                 name = INACTIVE_MARKUP_SYMBOLS + f.name + INACTIVE_MARKUP_SYMBOLS
@@ -322,7 +316,8 @@ def gen_embeds(base, isActive):
                 inline = f.inline
                 e.set_field_at(i, name=name, value=value, inline=inline)
                 i += 1
-            _es.append(e)
+        _es.append(e)
+
     return _es
 
 
@@ -331,12 +326,8 @@ def isNullReaction(message):
     return not bool(message.reactions)
 
 
-def isFirstReaction(message, event_type):
-    return (
-        len(message.reactions) == 1
-        and message.reactions[0].count == 1
-        and event_type == REACTION_EVENT_TYPE["add"]
-    )
+def isFirstReactionAdd(message):
+    return len(message.reactions) == 1 and message.reactions[0].count == 1
 
 
 # Clear all posts
