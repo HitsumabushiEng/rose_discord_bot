@@ -323,7 +323,7 @@ async def update_post(
 ):
     _es = []
 
-    if base is None:  # リアクションの変化によるActive/Deactiveの変更
+    if base is None:  # リアクションの変化によるActive/Inactiveの変更
         _es = update_embeds(target, isActive=isActive)
 
     else:  # 新規投稿、既存メッセージの編集によるポストの追加
