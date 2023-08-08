@@ -1,6 +1,5 @@
 #########################################
 # TODO LIST
-#   ・一定時間が経過したPOSTは自動で削除する。（毎週月曜の夜）
 #
 #   ・Bot書き込み用Chを作るようマニュアルに書く
 #   ・Bot書き込み用Ch名を変更できるようにする
@@ -17,12 +16,18 @@
 #   ・！clear_allコマンドは、管理者と特定の権限（メッセージ削除）を持つ人のみ実行可能にする。
 #   ・！clearコマンドは、実行者の自分のポストのみを削除
 #   ・Error回避のtry except を作る。
+#   ・一定時間が経過したPOSTは自動で削除する。（毎週火曜朝4時）
 
 import os
 
 ##
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+
+from datetime import datetime, time, timedelta, tzinfo
+from zoneinfo import ZoneInfo
+
+from typing import Union
 import asyncio
 
 ##
@@ -34,14 +39,18 @@ DEBUG_MODE = False
 
 #########################################
 # USER 環境変数の設定
-# KEYWORD = "#予約"
-KEYWORD = "📌"
-CHANNEL = "簡易ピン留め"
+KEYWORD = "📌"  # Botの動作条件。
+CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
 # DONE_EMOJI = "\N{SMILING FACE WITH OPEN MOUTH AND TIGHTLY-CLOSED EYES}"
-ACTIVE_COLOR = discord.Colour.dark_gold()
-INACTIVE_COLOR = discord.Colour.dark_grey()
-INACTIVE_MARKUP_SYMBOLS = "||"
+ACTIVE_COLOR = discord.Colour.dark_gold()  # Bot投稿のアクティブカラー
+INACTIVE_COLOR = discord.Colour.dark_grey()  # Bot投稿のインアクティブカラー
+INACTIVE_MARKUP_SYMBOLS = "||"  # Bot投稿のインアクティブ時の文字装飾
+
+# 自動削除関係の時間設定
+ZONE = ZoneInfo("Asia/Tokyo")
+CLEAN_TIME = time(hour=4, minute=0, second=0, tzinfo=ZONE)
+CLEAN_DAY = 1  # 0:月曜日、1:火曜日
 #########################################
 # System 環境変数の設定
 
@@ -87,6 +96,9 @@ async def on_ready():
     if guilds is not None:
         for g in guilds:
             register_guild_ch(g)
+
+    clean.start()  # 定期Loopの開始
+
     print("Test Bot logged in")
 
 
@@ -191,6 +203,30 @@ async def clear_all(ctx):
 
 
 #########################################
+# 定期実行ルーチン
+#########################################
+
+
+@tasks.loop(time=CLEAN_TIME, reconnect=True)
+# @tasks.loop(seconds=30, reconnect=True)
+async def clean():
+    now = datetime.now()
+
+    if now.weekday() % 7 == CLEAN_DAY:  # 決まった曜日のみ実行
+        print("定期動作作動")
+        records = sql.select_records_before_yesterday()
+        for r in records:
+            message = await get_message_by_record(r)
+            print(type(message))
+            if message is not None and not isNullReaction(message):  # Reactionが0じゃなかったら
+                await delete_post_by_record(r, POST=True, DB=True)
+                print("削除 : ", r)
+
+    else:
+        pass
+
+
+#########################################
 # Functions
 #########################################
 
@@ -238,9 +274,34 @@ async def check_and_activate(_cue: discord.Message):
 
 
 # イベントペイロードからメッセージを取得
-async def get_message_by_payload(payload):
-    txt_channel = client.get_channel(payload.channel_id)
-    message = await txt_channel.fetch_message(payload.message_id)
+async def get_message_by_payload(
+    payload: Union[
+        discord.RawMessageUpdateEvent,
+        discord.RawReactionActionEvent,
+    ]
+) -> discord.Message:
+    try:
+        message = (
+            await client.get_guild(payload.guild_id)
+            .get_channel(payload.channel_id)
+            .fetch_message(payload.message_id)
+        )
+    except:
+        message = None
+    return message
+
+
+# レコードからメッセージを取得
+async def get_message_by_record(r: sql.record) -> discord.Message:
+    m_id = r.row["post_message_ID"]
+    g_id = r.row["guild"]
+    ch_id = guild_channel_map[g_id]
+
+    try:
+        message = await client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
+    except:
+        message = None
+
     return message
 
 
@@ -321,11 +382,11 @@ def update_embeds(target: discord.Message, isActive: bool):
 
 
 # Reactionチェック
-def isNullReaction(message):
+def isNullReaction(message) -> bool:
     return not bool(message.reactions)
 
 
-def isFirstReactionAdd(message):
+def isFirstReactionAdd(message) -> bool:
     return len(message.reactions) == 1 and message.reactions[0].count == 1
 
 
@@ -344,19 +405,13 @@ async def clear_user_guild_post(g_id, u_id):
 
 
 async def delete_post_by_record(r, POST=False, DB=False):
-    m_id = r.row["post_message_ID"]
-    g_id = r.row["guild"]
-    ch_id = guild_channel_map[g_id]
-
     if POST:
-        try:
-            message = await client.get_channel(ch_id).fetch_message(m_id)
-        except:
-            message = None
-
+        message = await get_message_by_record(r)
         if message is not None:
             await message.delete()
     if DB:
+        m_id = r.row["post_message_ID"]
+        g_id = r.row["guild"]
         sql.delete_record_by_post_message(m_id, g_id)
 
 

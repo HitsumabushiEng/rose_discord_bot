@@ -44,8 +44,13 @@ INSERT_RECORDS = """
     VALUES (:post_message_ID, :cue_message_ID, :created_at, :author, :guild);
     """
 SELECT_ALL_VALUE = "SELECT * FROM post_list;"
+SELECT_PAST_RECORDS = (
+    "SELECT * FROM post_list WHERE created_at < datetime('now','-4 hours');"
+)
 SELECT_GUILD_ALL_VALUE = "SELECT * FROM post_list where guild=:guild;"
-SELECT_USER_GUILD_VALUE = "SELECT * FROM post_list where guild=:guild AND author=:author;"
+SELECT_USER_GUILD_VALUE = (
+    "SELECT * FROM post_list where guild=:guild AND author=:author;"
+)
 
 SELECT_VALUE_BY_CUE_MESSAGE = """
     SELECT * FROM post_list
@@ -102,11 +107,12 @@ def select_guild_all_records(g_id) -> list[record]:
     conn.close()
     return _records
 
-def select_user_guild_records(g_id,u_id) -> list[record]:
+
+def select_user_guild_records(g_id, u_id) -> list[record]:
     _records = []
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id,"author":u_id})
+    cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id, "author": u_id})
     for row in cur:
         if row is not None:
             _records.append(record(*row))
@@ -140,6 +146,20 @@ def select_record_by_post_message(
         _record = record(*_row)
     conn.close()
     return _record
+
+
+def select_records_before_yesterday() -> list[record]:
+    _records = []
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    cur.execute(SELECT_PAST_RECORDS)
+    for row in cur:
+        if row is not None:
+            _records.append(record(*row))
+    conn.close()
+    return _records
+
 
 #######
 
