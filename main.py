@@ -39,7 +39,7 @@ DEBUG_MODE = False
 
 #########################################
 # USER 環境変数の設定
-KEYWORD = "📌"  # Botの動作条件。
+KEYWORDS = ["📌", "📍"]
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
 # DONE_EMOJI = "\N{SMILING FACE WITH OPEN MOUTH AND TIGHTLY-CLOSED EYES}"
@@ -244,7 +244,7 @@ async def check_and_activate(_cue: discord.Message):
     _record = sql.select_record_by_cue_message(_cue.id, _cue.guild.id)
 
     if _record is None:  # DBに書き込み元メッセージの情報がない場合
-        if KEYWORD in _cue.content:
+        if any((s in _cue.content) for s in KEYWORDS):
             await new_post(_cue)
         else:
             pass
@@ -258,7 +258,7 @@ async def check_and_activate(_cue: discord.Message):
         except:  # Bot停止中にPostが削除されており、404 Not found.
             post = None
 
-        if KEYWORD in _cue.content:
+        if any((s in _cue.content) for s in KEYWORDS):
             match post:
                 case None:
                     await new_post(_cue)
@@ -344,7 +344,9 @@ def gen_embed_from_message(message: discord.Message, isActive: bool) -> discord.
         + MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
     )
 
-    _v = message.content.replace(KEYWORD, "")
+    _v = message.content
+    for s in KEYWORDS:
+        _v = _v.replace(s, "")
 
     if isActive:
         _e.color = ACTIVE_COLOR
