@@ -19,6 +19,8 @@
 #   ・一定時間が経過したPOSTは自動で削除する。（毎週火曜朝4時）
 
 import os
+from typing import Union
+import asyncio
 
 ##
 import discord
@@ -26,9 +28,6 @@ from discord.ext import commands, tasks
 
 from datetime import datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
-
-from typing import Union
-import asyncio
 
 ##
 import sql as sql
@@ -42,7 +41,6 @@ DEBUG_MODE = False
 KEYWORDS = ["📌", "📍"]
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
-# DONE_EMOJI = "\N{SMILING FACE WITH OPEN MOUTH AND TIGHTLY-CLOSED EYES}"
 ACTIVE_COLOR = discord.Colour.dark_gold()  # Bot投稿のアクティブカラー
 INACTIVE_COLOR = discord.Colour.dark_grey()  # Bot投稿のインアクティブカラー
 INACTIVE_MARKUP_SYMBOLS = "||"  # Bot投稿のインアクティブ時の文字装飾
@@ -83,7 +81,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.guilds = True
-# client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
 
 
@@ -114,8 +111,6 @@ async def on_guild_remove(guild: discord.guild):
 
 
 # メッセージ受信時に動作する処理
-# @client.event
-# async def on_message(message):
 @client.listen("on_message")
 async def message_listener(message: discord.Message):
     if message.author.bot:
@@ -190,7 +185,6 @@ async def clear(ctx):
 
 @client.command()
 @commands.has_permissions(manage_messages=True)
-# @commands.is_owner()
 async def clear_all(ctx):
     if ctx.message.content == BOT_PREFIX + "clear_all":  # コマンドだけに限定。
         await clear_guild_all_post(ctx.guild.id)
@@ -217,8 +211,9 @@ async def clean():
         records = sql.select_records_before_yesterday()
         for r in records:
             message = await get_message_by_record(r)
-            print(type(message))
-            if message is not None and not isNullReaction(message):  # Reactionが0じゃなかったら
+            if (message is not None) and (
+                not isNullReaction(message)
+            ):  # Reactionが0じゃなかったら
                 await delete_post_by_record(r, POST=True, DB=True)
                 print("削除 : ", r)
 
@@ -416,8 +411,6 @@ async def delete_post_by_record(r, POST=False, DB=False):
         g_id = r.row["guild"]
         sql.delete_record_by_post_message(m_id, g_id)
 
-
-# post_message_ID, cue_message_ID, created_at, author
 
 #########################################
 # Client起動
