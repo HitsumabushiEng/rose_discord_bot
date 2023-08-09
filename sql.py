@@ -1,3 +1,21 @@
+#########################################
+# DB関係のクラス。
+#
+# DBの構築、DBに関するI/Fを定義
+#
+# DB List
+#
+# Table :
+#   post_list
+# Data：
+#   post_message_ID INTEGER     PRIMARY KEY,
+#   cue_message_ID  INTEGER
+#   created_at      TEXT        NOT NULL,
+#   author          INTEGER     NOT NULL,
+#   guild           INTEGER     NOT NULL
+#
+#########################################
+
 import sqlite3
 import discord
 
@@ -44,10 +62,12 @@ INSERT_RECORDS = """
     VALUES (:post_message_ID, :cue_message_ID, :created_at, :author, :guild);
     """
 SELECT_ALL_VALUE = "SELECT * FROM post_list;"
+
 SELECT_PAST_RECORDS = (
     "SELECT * FROM post_list WHERE created_at < datetime('now','-4 hours');"
 )
 SELECT_GUILD_ALL_VALUE = "SELECT * FROM post_list where guild=:guild;"
+
 SELECT_USER_GUILD_VALUE = (
     "SELECT * FROM post_list where guild=:guild AND author=:author;"
 )
@@ -61,6 +81,7 @@ SELECT_VALUE_BY_POST_MESSAGE = """
     where post_message_ID=:ID AND guild=:guild;
 """
 DELETE_GUILD_ALL_VALUE = "DELETE FROM post_list where guild=:guild;"
+
 DELETE_VALUE_BY_CUE_MESSAGE = """
     DELETE FROM post_list
     where cue_message_ID=:ID AND guild=:guild;
@@ -69,7 +90,6 @@ DELETE_VALUE_BY_POST_MESSAGE = """
     DELETE FROM post_list
     where post_message_ID=:ID AND guild=:guild;
 """
-# SELECT_TYPE_OF_COLUMNS = "SELECT typeof(t1), typeof(t2),typeof(t3),typeof(t4),typeof(t5) FROM example;"
 
 
 #########################################
