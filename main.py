@@ -38,7 +38,10 @@ DEBUG_MODE = False
 
 #########################################
 # USER 環境変数の設定
-KEYWORDS = ["📌", "📍"]
+KEYWORDS_PIN = ["📌", "📍"]
+KEYWORDS_CHECK = ["✅", "☑️", "✔️"]
+EMOJI_CHECK = [discord.partial_emoji.PartialEmoji.from_str(s) for s in KEYWORDS_CHECK]
+
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
 ACTIVE_COLOR = discord.Colour.dark_gold()  # Bot投稿のアクティブカラー
@@ -152,7 +155,18 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
 # リアクション追加に対して反応
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    if (
+    ## ここから完了チェック
+    r = sql.select_record_by_cue_message(payload.message_id, payload.guild_id)
+    if r is not None:
+        message = await get_message_by_record(r, isPost=False, ch_id=payload.channel_id)
+        if message is not None:
+            if (payload.emoji in EMOJI_CHECK) and (
+                payload.user_id == message.author.id
+            ):
+                await delete_post_by_record(r=r, POST=True, DB=True)
+
+    ## ここから黒塗りチェック
+    elif (
         payload.channel_id == guild_channel_map[payload.guild_id]
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await get_message_by_payload(payload)
@@ -163,6 +177,22 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 # リアクション削除に対して反応
 @client.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    ## ここから完了チェック
+    try:
+        message = await client.get_channel(payload.channel_id).fetch_message(
+            payload.message_id
+        )
+    except:
+        message = None
+    if message is not None:
+        if (
+            (payload.emoji in EMOJI_CHECK)
+            and (payload.user_id == message.author.id)
+            and await isNoUserCheckReactions(message, payload.user_id)
+        ):
+            await check_and_activate(message)
+
+    ## ここから黒塗りチェック
     if (
         payload.channel_id == guild_channel_map[payload.guild_id]
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
@@ -210,7 +240,7 @@ async def clean():
         print("定期動作作動")
         records = sql.select_records_before_yesterday()
         for r in records:
-            message = await get_message_by_record(r)
+            message = await get_message_by_record(r, isPost=True)
             if (message is not None) and (
                 not isNullReaction(message)
             ):  # Reactionが0じゃなかったら
@@ -236,10 +266,15 @@ def register_guild_ch(_g: discord.Guild):
 
 # メッセージが投稿・編集された時の処理
 async def check_and_activate(_cue: discord.Message):
+    # チェックのリアクションがついている場合、何もしない。
+    if not await isNoUserCheckReactions(_cue, _cue.author.id):
+        return
+
+    # 投稿済みレコードの検索
     _record = sql.select_record_by_cue_message(_cue.id, _cue.guild.id)
 
     if _record is None:  # DBに書き込み元メッセージの情報がない場合
-        if any((s in _cue.content) for s in KEYWORDS):
+        if any((s in _cue.content) for s in KEYWORDS_PIN):
             await new_post(_cue)
         else:
             pass
@@ -253,7 +288,7 @@ async def check_and_activate(_cue: discord.Message):
         except:  # Bot停止中にPostが削除されており、404 Not found.
             post = None
 
-        if any((s in _cue.content) for s in KEYWORDS):
+        if any((s in _cue.content) for s in KEYWORDS_PIN):
             match post:
                 case None:
                     await new_post(_cue)
@@ -287,10 +322,16 @@ async def get_message_by_payload(
 
 
 # レコードからメッセージを取得
-async def get_message_by_record(r: sql.record) -> discord.Message:
-    m_id = r.row["post_message_ID"]
+async def get_message_by_record(
+    r: sql.record, isPost: bool = True, ch_id: int = None
+) -> discord.Message:
     g_id = r.row["guild"]
-    ch_id = guild_channel_map[g_id]
+
+    if isPost:
+        ch_id = guild_channel_map[g_id]
+        m_id = r.row["post_message_ID"]
+    else:
+        m_id = r.row["cue_message_ID"]
 
     try:
         message = await client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
@@ -340,7 +381,7 @@ def gen_embed_from_message(message: discord.Message, isActive: bool) -> discord.
     )
 
     _v = message.content
-    for s in KEYWORDS:
+    for s in KEYWORDS_PIN:
         _v = _v.replace(s, "")
 
     if isActive:
@@ -387,6 +428,17 @@ def isFirstReactionAdd(message) -> bool:
     return len(message.reactions) == 1 and message.reactions[0].count == 1
 
 
+async def isNoUserCheckReactions(
+    message: discord.Message, user: discord.User.id
+) -> bool:
+    for r in message.reactions:
+        reaction_users = [u.id async for u in r.users()]
+        if any((s in r.emoji) for s in KEYWORDS_CHECK):
+            if user in reaction_users:
+                return False
+    return True
+
+
 # Clear all posts
 async def clear_guild_all_post(g_id):
     records = sql.select_guild_all_records(g_id)
@@ -403,7 +455,7 @@ async def clear_user_guild_post(g_id, u_id):
 
 async def delete_post_by_record(r, POST=False, DB=False):
     if POST:
-        message = await get_message_by_record(r)
+        message = await get_message_by_record(r, isPost=True)
         if message is not None:
             await message.delete()
     if DB:
