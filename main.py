@@ -49,6 +49,7 @@ INACTIVE_COLOR = discord.Colour.dark_grey()  # Bot投稿のインアクティブ
 INACTIVE_MARKUP_SYMBOLS = "||"  # Bot投稿のインアクティブ時の文字装飾
 
 # 自動削除関係の時間設定
+CLEAN_ACTIVE = True  # 自動削除を行うか否か
 ZONE = ZoneInfo("Asia/Tokyo")
 CLEAN_TIME = time(hour=4, minute=0, second=0, tzinfo=ZONE)
 CLEAN_DAY = 1  # 0:月曜日、1:火曜日
@@ -236,7 +237,7 @@ async def clear_all(ctx):
 async def clean():
     now = datetime.now()
 
-    if now.weekday() % 7 == CLEAN_DAY:  # 決まった曜日のみ実行
+    if now.weekday() % 7 == CLEAN_DAY and CLEAN_ACTIVE:  # 決まった曜日のみ実行
         print("定期動作作動")
         records = sql.select_records_before_yesterday()
         for r in records:
@@ -343,7 +344,7 @@ async def get_message_by_record(
 
 # ポストの新規投稿
 async def new_post(_cue: discord.Message):
-    _embed = gen_embed_from_message(_cue, isActive=True)
+    _embed = await gen_embed_from_message(_cue, isActive=True)
     try:
         msg = await client.get_channel(guild_channel_map[_cue.guild.id]).send(
             embed=_embed
@@ -363,7 +364,7 @@ async def update_post(
         _es = update_embeds(target, isActive=isActive)
 
     else:  # 新規投稿、既存メッセージの編集によるポストの追加
-        e = gen_embed_from_message(base, isActive=isActive)
+        e = await gen_embed_from_message(base, isActive=isActive)
         _es.append(e)
     try:
         await target.edit(embeds=_es)
@@ -371,9 +372,13 @@ async def update_post(
         print(ERROR_MESSAGE.format("update_post()"))
 
 
-def gen_embed_from_message(message: discord.Message, isActive: bool) -> discord.Embed:
+async def gen_embed_from_message(
+    message: discord.Message, isActive: bool
+) -> discord.Embed:
     _e = discord.Embed()
-    _n = message.author.display_name
+    _g = await client.fetch_guild(message.guild.id)
+    _m = await _g.fetch_member(message.author.id)
+    _n = _m.display_name
     _n = (
         _n
         + "   :   "
