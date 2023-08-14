@@ -6,7 +6,7 @@
 
 ## 機能紹介
 
-ピン留めしたいメッセージに特定のキーワード[^pin_key]を含めることにより、特定のチャネル[^check_key]にBotがメッセージを投稿します。
+ピン留めしたいメッセージに特定のキーワード[^pin_key]を含めることにより、特定のチャネル[^channel_name]にBotがメッセージを投稿します。
 
 - 元メッセージ</br>
     ![cue message](./Resources/ReadMe/cue_message.png)
@@ -73,6 +73,7 @@
 ![QR code](./Resources/ReadMe/invite_qr.png)
 
 ## カスタマイズ
+
 ピン留めを行うためのキーワードや投稿先のチャネル名、Botによる投稿の自動削除などをカスタマイズしたい場合、main.py内の以下の部分を適宜修正したBotを自身のサービスとして起動させてください。その際、BotのTokenは環境変数`TOKEN`として設定をお願いします。
 
 ``` python
