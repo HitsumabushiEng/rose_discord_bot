@@ -8,13 +8,13 @@
 
 ピン留めしたいメッセージに特定のキーワード[^pin_key]を含めることにより、事前に用意した特定のチャネル[^check_key]にBotがメッセージを投稿します。
 
-- 元メッセージ
+- 元メッセージ</br>
     ![cue message](./Resources/ReadMe/cue_message.png)
 
-- 投稿先チャネル
+- 投稿先チャネル</br>
     ![channel](./Resources/ReadMe/channel.png)
 
-- Botによる投稿メッセージ
+- Botによる投稿メッセージ</br>
     ![post message](./Resources/ReadMe/post_message.png)
 
 ## 使用方法
@@ -23,25 +23,25 @@
 
 - ピン留めをする(Botによるメッセージ投稿を行う)
   - 以下のアイコンのいずれかをメッセージ内に記載する。
-    `"📌", "📍"` [^pin_key]
+    `"📌", "📍"` [^pin_key]</br>
     ![cue message](./Resources/ReadMe/cue_message.png)
 
 - ピン留めを外す(Botによるメッセージ投稿を削除する)
   - 投稿元メッセージに、以下のいずれかのリアクションを付与する。
-    `"✅", "☑️", "✔️"` [^check_key]
+    `"✅", "☑️", "✔️"` [^check_key]</br>
     ![cue checked](./Resources/ReadMe/cue_checked.png)
-  - 投稿元メッセージを編集し、アイコンをメッセージ内から削除する。
+  - 投稿元メッセージを編集し、アイコンをメッセージ内から削除する。</br>
     ![cue edited](./Resources/ReadMe/cue_edited.png)
   - 投稿元メッセージを削除する。
 
 - 自身の全てのピン留めを外す(Botによるメッセージ投稿を一括削除する)
-  - `!clear`とメッセージ(コマンド)を投稿する。
+  - `!clear`とメッセージ(コマンド)を投稿する。</br>
     ![command clear](./Resources/ReadMe/command_clear.png)
 
 ### 投稿者以外のユーザー
 
 - Botの投稿を黒ガードにして目立たなくする(投稿者が削除する前に見る必要がないことを示す。)
-  - 当該のBot投稿に対し、何らかのリアクションを付与する。
+  - 当該のBot投稿に対し、何らかのリアクションを付与する。</br>
     ![Alt text](./Resources/ReadMe/post_hidden.png)
 
 ### 管理者
@@ -50,7 +50,7 @@
   - Botのメッセージを直接削除する
 
 - 全てのピン留めを外す(Botによるメッセージ投稿を一括削除する)
-  - `!clear_all`とメッセージ(コマンド)を投稿する。
+  - `!clear_all`とメッセージ(コマンド)を投稿する。</br>
     ![Alt text](./Resources/ReadMe/command_clear_all.png)
 
 ### その他
@@ -63,7 +63,7 @@
 
 ### 事前準備
 
-特定の名前[^channel_name]のチャネルをBotを導入したいサーバに立ててください。
+特定の名前[^channel_name]のチャネルをBotを導入したいサーバに立ててください。</br>
     ![channel](./Resources/ReadMe/channel.png)
 
 ### Botの招待
@@ -88,7 +88,6 @@ ZONE = ZoneInfo("Asia/Tokyo")
 CLEAN_TIME = time(hour=4, minute=0, second=0, tzinfo=ZONE)
 CLEAN_DAY = 1  # 0:月曜日、1:火曜日
 ```
-
 
 [^pin_key]:`"📌", "📍"` main.py内該当部により変更可能
 [^check_key]:`"✅", "☑️", "✔️"` main.py内該当部により変更可能
