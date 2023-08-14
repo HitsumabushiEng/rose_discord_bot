@@ -112,6 +112,7 @@ async def on_guild_join(guild: discord.guild):
 @client.event
 async def on_guild_remove(guild: discord.guild):
     await clear_guild_all_post(guild.id)
+    erase_guild_ch(guild.id)
 
 
 # メッセージ受信時に動作する処理
@@ -159,12 +160,11 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     ## ここから完了チェック
     r = sql.select_record_by_cue_message(payload.message_id, payload.guild_id)
     if r is not None:
-        message = await get_message_by_record(r, isPost=False, ch_id=payload.channel_id)
-        if message is not None:
-            if (payload.emoji in EMOJI_CHECK) and (
-                payload.user_id == message.author.id
-            ):
+        cue = await get_message_by_record(r, isPost=False, ch_id=payload.channel_id)
+        if cue is not None:
+            if (payload.emoji in EMOJI_CHECK) and (payload.user_id == cue.author.id):
                 await delete_post_by_record(r=r, POST=True, DB=True)
+                return
 
     ## ここから黒塗りチェック
     elif (
@@ -172,7 +172,18 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await get_message_by_payload(payload)
         if message.author == client.user and isFirstReactionAdd(message):
-            await update_post(message, isActive=False)
+            r = sql.select_record_by_post_message(
+                payload.message_id, g_id=payload.guild_id
+            )
+            if r is not None:
+                cue = await get_message_by_record(
+                    r=r, isPost=False, ch_id=payload.channel_id
+                )
+                message = await get_message_by_payload(payload)
+                if message.author == client.user and isFirstReactionAdd(message):
+                    await update_post(target=message, base=cue, isActive=False)
+                    return
+    return
 
 
 # リアクション削除に対して反応
@@ -199,7 +210,14 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await get_message_by_payload(payload)
         if message.author == client.user and isNullReaction(message):
-            await update_post(message, isActive=True)
+            _r = sql.select_record_by_post_message(
+                m_id=message.id, g_id=message.guild.id
+            )
+            if _r is not None:
+                cue = await get_message_by_record(
+                    _r, isPost=False, ch_id=guild_channel_map[payload.guild_id]
+                )
+                await update_post(target=message, base=cue, isActive=True)
 
 
 @client.command()
@@ -263,6 +281,10 @@ def register_guild_ch(_g: discord.Guild):
             ## guild id -> channel を紐づけ
             global guild_channel_map
             guild_channel_map[_g.id] = c.id
+
+
+def erase_guild_ch(_gid: discord.Guild.id):
+    guild_channel_map.pop[_gid]
 
 
 # メッセージが投稿・編集された時の処理
@@ -344,10 +366,11 @@ async def get_message_by_record(
 
 # ポストの新規投稿
 async def new_post(_cue: discord.Message):
-    _embed = await gen_embed_from_message(_cue, isActive=True)
+    _embeds = []
+    _embeds = await gen_embed_from_message(_cue, isActive=True)
     try:
         msg = await client.get_channel(guild_channel_map[_cue.guild.id]).send(
-            embed=_embed
+            embeds=_embeds
         )
         sql.insert_record(cue=_cue, post=msg)
     except:
@@ -356,16 +379,12 @@ async def new_post(_cue: discord.Message):
 
 # InactiveになったポストのActivate
 async def update_post(
-    target: discord.Message, base: discord.Message = None, isActive: bool = True
+    target: discord.Message, base: discord.Message, isActive: bool = True
 ):
     _es = []
 
-    if base is None:  # リアクションの変化によるActive/Inactiveの変更
-        _es = update_embeds(target, isActive=isActive)
-
-    else:  # 新規投稿、既存メッセージの編集によるポストの追加
-        e = await gen_embed_from_message(base, isActive=isActive)
-        _es.append(e)
+    es = await gen_embed_from_message(base, isActive=isActive)
+    _es.extend(es)
     try:
         await target.edit(embeds=_es)
     except:
@@ -374,29 +393,47 @@ async def update_post(
 
 async def gen_embed_from_message(
     message: discord.Message, isActive: bool
-) -> discord.Embed:
+) -> [discord.Embed]:
+    _es = []
     _e = discord.Embed()
     _g = await client.fetch_guild(message.guild.id)
     _m = await _g.fetch_member(message.author.id)
     _n = _m.display_name
-    _n = (
-        _n
-        + "   :   "
-        + MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
-    )
+    _l = MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
 
-    _v = message.content
+    _c = message.content
     for s in KEYWORDS_PIN:
-        _v = _v.replace(s, "")
+        _c = _c.replace(s, "")
 
     if isActive:
         _e.color = ACTIVE_COLOR
     else:
         _e.color = INACTIVE_COLOR
-        _n = INACTIVE_MARKUP_SYMBOLS + _n + INACTIVE_MARKUP_SYMBOLS
-        _v = INACTIVE_MARKUP_SYMBOLS + _v + INACTIVE_MARKUP_SYMBOLS
-    _e.add_field(name=_n, value=_v)
-    return _e
+        _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
+        _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
+
+    _e.set_author(name=_n, icon_url=_m.display_avatar.url)
+    _e.add_field(name=_c, value=_l)
+
+    _es.append(_e)
+    _as = message.attachments
+
+    if isActive:
+        isFirst = True
+        for a in _as:
+            if "image" in a.content_type:
+                print(a.content_type, ":image")
+                _e = discord.Embed()
+                _e.set_image(url=a.url)
+                _es.append(_e)
+            elif isFirst:
+                _e = discord.Embed(description="その他添付ファイルあり", url=a.url)
+                _es.append(_e)
+                isFirst = False
+    else:
+        pass
+
+    return _es
 
 
 def update_embeds(target: discord.Message, isActive: bool):
