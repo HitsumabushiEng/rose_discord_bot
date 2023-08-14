@@ -284,7 +284,7 @@ def register_guild_ch(_g: discord.Guild):
 
 
 def erase_guild_ch(_gid: discord.Guild.id):
-    guild_channel_map.pop[_gid]
+    del guild_channel_map[_gid]
 
 
 # メッセージが投稿・編集された時の処理
