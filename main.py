@@ -163,7 +163,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     ## ここから完了チェック
     r = sql.select_record_by_cue_message(payload.message_id, payload.guild_id)
     if r is not None:
-        cue = await get_message_by_record(r, isPost=False, ch_id=payload.channel_id)
+        cue = await get_message_by_record(r, isPost=False)
         if cue is not None:
             if (payload.emoji in EMOJI_CHECK) and (payload.user_id == cue.author.id):
                 await delete_post_by_record(r=r, POST=True, DB=True)
@@ -179,9 +179,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 payload.message_id, g_id=payload.guild_id
             )
             if r is not None:
-                cue = await get_message_by_record(
-                    r=r, isPost=False, ch_id=payload.channel_id
-                )
+                cue = await get_message_by_record(r=r, isPost=False)
                 message = await get_message_by_payload(payload)
                 if message.author == client.user and isFirstReactionAdd(message):
                     await update_post(target=message, base=cue, isActive=False)
@@ -217,9 +215,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
                 m_id=message.id, g_id=message.guild.id
             )
             if _r is not None:
-                cue = await get_message_by_record(
-                    _r, isPost=False, ch_id=guild_channel_map[payload.guild_id]
-                )
+                cue = await get_message_by_record(_r, isPost=False)
                 await update_post(target=message, base=cue, isActive=True)
 
 
@@ -348,15 +344,14 @@ async def get_message_by_payload(
 
 
 # レコードからメッセージを取得
-async def get_message_by_record(
-    r: sql.record, isPost: bool = True, ch_id: int = None
-) -> discord.Message:
+async def get_message_by_record(r: sql.record, isPost: bool = True) -> discord.Message:
     g_id = r.row["guild"]
 
     if isPost:
         ch_id = guild_channel_map[g_id]
         m_id = r.row["post_message_ID"]
     else:
+        ch_id = r.row["cue_channel_ID"]
         m_id = r.row["cue_message_ID"]
 
     try:

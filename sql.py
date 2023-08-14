@@ -10,6 +10,7 @@
 # Data：
 #   post_message_ID INTEGER     PRIMARY KEY,
 #   cue_message_ID  INTEGER
+#   cue_channel_ID  INTEGER
 #   created_at      TEXT        NOT NULL,
 #   author          INTEGER     NOT NULL,
 #   guild           INTEGER     NOT NULL
@@ -33,10 +34,13 @@ class record:
     def __init__(self) -> None:
         self = None
 
-    def __init__(self, post_message_ID, cue_message_ID, created_at, author, guild):
+    def __init__(
+        self, post_message_ID, cue_message_ID, cue_channel_ID, created_at, author, guild
+    ):
         self.row = {
             "post_message_ID": post_message_ID,
             "cue_message_ID": cue_message_ID,
+            "cue_channel_ID": cue_channel_ID,
             "created_at": created_at,
             "author": author,
             "guild": guild,
@@ -51,6 +55,7 @@ CREATE_TABLE = """
         post_list(
             post_message_ID INTEGER PRIMARY KEY,
             cue_message_ID INTEGER,
+            cue_channel_ID INTEGER,
             created_at TEXT NOT NULL,
             author INTEGER NOT NULL,
             guild INTEGER NOT NULL
@@ -58,8 +63,8 @@ CREATE_TABLE = """
     """
 INSERT_RECORDS = """
     INSERT INTO
-    post_list (post_message_ID, cue_message_ID, created_at, author, guild)
-    VALUES (:post_message_ID, :cue_message_ID, :created_at, :author, :guild);
+    post_list (post_message_ID, cue_message_ID, cue_channel_ID, created_at, author, guild)
+    VALUES (:post_message_ID, :cue_message_ID, :cue_channel_ID, :created_at, :author, :guild);
     """
 SELECT_ALL_VALUE = "SELECT * FROM post_list;"
 
@@ -110,7 +115,9 @@ def init():
 def insert_record(cue: discord.Message, post: discord.Message):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    _record = record(post.id, cue.id, cue.created_at, cue.author.id, cue.guild.id)
+    _record = record(
+        post.id, cue.id, cue.channel.id, cue.created_at, cue.author.id, cue.guild.id
+    )
     cur.execute(INSERT_RECORDS, _record.row)
     conn.commit()
     conn.close()
