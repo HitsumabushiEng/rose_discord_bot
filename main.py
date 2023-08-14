@@ -400,7 +400,7 @@ async def gen_embed_from_message(
     _e = discord.Embed()
     _g = await client.fetch_guild(message.guild.id)
     _m = await _g.fetch_member(message.author.id)
-    _n = _m.display_name + "          #" + message.channel.name + "  >  💬"
+    _n = _m.display_name
     _l = MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
 
     _c = message.content
@@ -411,10 +411,11 @@ async def gen_embed_from_message(
         _e.color = ACTIVE_COLOR
     else:
         _e.color = INACTIVE_COLOR
+        _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
         _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
 
-    _e.set_author(name=_n, icon_url=_m.display_avatar.url, url=_l)
-    _e.add_field(name="", value=_c)
+    _e.set_author(name=_n, icon_url=_m.display_avatar.url)
+    _e.add_field(name=_l, value=_c)
 
     _es.append(_e)
     _as = message.attachments
