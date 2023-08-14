@@ -6,7 +6,7 @@
 
 ## 機能紹介
 
-ピン留めしたいメッセージに特定のキーワード[^pin_key]を含めることにより、事前に用意した特定のチャネル[^check_key]にBotがメッセージを投稿します。
+ピン留めしたいメッセージに特定のキーワード[^pin_key]を含めることにより、特定のチャネル[^check_key]にBotがメッセージを投稿します。
 
 - 元メッセージ</br>
     ![cue message](./Resources/ReadMe/cue_message.png)
@@ -40,7 +40,7 @@
 
 ### 投稿者以外のユーザー
 
-- Botの投稿を黒ガードにして目立たなくする(投稿者が削除する前に見る必要がないことを示す。)
+- Botの投稿を黒ガードにして目立たなくする。(投稿者が削除する前に見る必要がないことを示す。)
   - 当該のBot投稿に対し、何らかのリアクションを付与する。</br>
     ![Alt text](./Resources/ReadMe/post_hidden.png)
 
@@ -68,7 +68,7 @@
 
 ### Botの招待
 
-以下のURLからBotを招待してください。
+以下のURLからBotを招待してください。</br>
 `https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=339008&scope=bot`
 
 ## カスタマイズ
