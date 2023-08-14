@@ -42,6 +42,8 @@ KEYWORDS_PIN = ["📌", "📍"]
 KEYWORDS_CHECK = ["✅", "☑️", "✔️"]
 EMOJI_CHECK = [discord.partial_emoji.PartialEmoji.from_str(s) for s in KEYWORDS_CHECK]
 
+INFO_ATTACHED_FILE = "その他添付ファイルあり"
+
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
 ACTIVE_COLOR = discord.Colour.dark_gold()  # Bot投稿のアクティブカラー
@@ -398,7 +400,7 @@ async def gen_embed_from_message(
     _e = discord.Embed()
     _g = await client.fetch_guild(message.guild.id)
     _m = await _g.fetch_member(message.author.id)
-    _n = _m.display_name
+    _n = _m.display_name + "          #" + message.channel.name + "  >  💬"
     _l = MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
 
     _c = message.content
@@ -409,11 +411,10 @@ async def gen_embed_from_message(
         _e.color = ACTIVE_COLOR
     else:
         _e.color = INACTIVE_COLOR
-        _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
         _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
 
-    _e.set_author(name=_n, icon_url=_m.display_avatar.url)
-    _e.add_field(name=_c, value=_l)
+    _e.set_author(name=_n, icon_url=_m.display_avatar.url, url=_l)
+    _e.add_field(name="", value=_c)
 
     _es.append(_e)
     _as = message.attachments
@@ -422,41 +423,15 @@ async def gen_embed_from_message(
         isFirst = True
         for a in _as:
             if "image" in a.content_type:
-                print(a.content_type, ":image")
                 _e = discord.Embed()
                 _e.set_image(url=a.url)
                 _es.append(_e)
             elif isFirst:
-                _e = discord.Embed(description="その他添付ファイルあり", url=a.url)
+                _e = discord.Embed(description=INFO_ATTACHED_FILE, url=a.url)
                 _es.append(_e)
                 isFirst = False
     else:
         pass
-
-    return _es
-
-
-def update_embeds(target: discord.Message, isActive: bool):
-    _es = []
-    for e in target.embeds:
-        i = 0
-        if isActive:  # generate Active post embeds
-            e.color = ACTIVE_COLOR
-            for f in e.fields:
-                _name = f.name.replace(INACTIVE_MARKUP_SYMBOLS, "")
-                _value = f.value.replace(INACTIVE_MARKUP_SYMBOLS, "")
-                inline = f.inline
-                e.set_field_at(i, name=_name, value=_value, inline=inline)
-                i += 1
-        else:  # generate Inactive post embeds
-            e.color = INACTIVE_COLOR
-            for f in e.fields:
-                name = INACTIVE_MARKUP_SYMBOLS + f.name + INACTIVE_MARKUP_SYMBOLS
-                value = INACTIVE_MARKUP_SYMBOLS + f.value + INACTIVE_MARKUP_SYMBOLS
-                inline = f.inline
-                e.set_field_at(i, name=name, value=value, inline=inline)
-                i += 1
-        _es.append(e)
 
     return _es
 
