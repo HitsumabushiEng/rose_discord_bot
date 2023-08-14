@@ -1,9 +1,8 @@
 #########################################
 # TODO LIST
 #
-#   ・Bot書き込み用Chを作るようマニュアルに書く
-#   ・Bot書き込み用Ch名を変更できるようにする
-#   ・## for TEST ##をクリーンする
+#   ・Bot書き込み用Ch名を変更できるようにする?
+#
 # DONE
 #   ・BOTのメッセージ全削除コマンドを追加する
 #   ・BOTのメッセージが削除されたときにDBから削除する
@@ -17,6 +16,8 @@
 #   ・！clearコマンドは、実行者の自分のポストのみを削除
 #   ・Error回避のtry except を作る。
 #   ・一定時間が経過したPOSTは自動で削除する。（毎週火曜朝4時）
+#   ・Bot書き込み用Chを作るようマニュアルに書く
+#   ・## for TEST ##をクリーンする
 
 import os
 from typing import Union
@@ -412,7 +413,8 @@ async def gen_embed_from_message(
     else:
         _e.color = INACTIVE_COLOR
         _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
-        _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
+        if _c:  # 空文字の場合は|| || で囲わない。
+            _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
 
     _e.set_author(name=_n, icon_url=_m.display_avatar.url)
     _e.add_field(name=_l, value=_c)
