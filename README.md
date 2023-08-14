@@ -70,6 +70,7 @@
 
 以下のURLからBotを招待してください。</br>
 `https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=339008&scope=bot`
+![QR code](./Resources/ReadMe/invite_qr.png)
 
 ## カスタマイズ
 ピン留めを行うためのキーワードや投稿先のチャネル名、Botによる投稿の自動削除などをカスタマイズしたい場合、main.py内の以下の部分を適宜修正したBotを自身のサービスとして起動させてください。その際、BotのTokenは環境変数`TOKEN`として設定をお願いします。
