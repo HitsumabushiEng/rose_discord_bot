@@ -69,7 +69,7 @@
 ### Botの招待
 
 以下のURLからBotを招待してください。</br>
-`https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=339008&scope=bot`
+`https://discord.com/api/oauth2/authorize?client_id=1133287177732759593&permissions=339008&scope=bot`</br>
 ![QR code](./Resources/ReadMe/invite_qr.png)
 
 ## カスタマイズ
