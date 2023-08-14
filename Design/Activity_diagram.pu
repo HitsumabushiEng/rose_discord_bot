@@ -1,0 +1,66 @@
+@startuml event_listener
+start
+switch (event?)
+case ( on_ready() or on_guild_join() )
+  :register_guild_ch();
+    switch (event?)
+    case ( on_ready() )
+    :clean.start();
+    case ( on_guild_join() ) 
+    endswitch
+case ( on_guild_remove() or command(clear_all()))
+  :clear_guild_all_post();
+    switch (event?)
+    case ( on_guild_remove() )
+    :erase_guild_ch();
+    case ( command(clear_all()) ) 
+    endswitch
+case ( command(clear()) )
+  :clear_user_guild_post();
+case ( listen("on_message") or on_raw_message_edit() )
+    switch(event?)
+        case (Bot comment)
+        case (User comment)
+        (A)
+        :chech_and_activate();
+        switch(event)
+          case (No posted and Key in contents)
+          :new_post();
+          case (have posted and Key in contents)
+          (B)
+          :update_post();
+          case (no Key in contents)
+          (c)
+          :delete_post_by_record();
+          case (No post and no Key)
+        endswitch
+    endswitch
+case ( on_raw_reaction_remove() )
+    switch(event?)
+        case (del Check Emoji from cue message)
+        (A)
+        detach
+        case (other)
+        case (del reaction from post message)
+        (B)
+        detach
+    endswitch
+
+case ( on_raw_reaction_add() )
+    switch(event?)
+        case (add reaction on post message)
+        (B)
+        detach
+        case (other)
+        case (add Check Emoji on cue message)
+        (c)
+        detach
+    endswitch
+
+case ( on_raw_message_delete() )
+    (c)
+    detach
+
+endswitch
+stop
+@enduml
