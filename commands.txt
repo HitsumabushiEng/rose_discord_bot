@@ -1,3 +1,11 @@
+# Activate env.
+.\.venv\Scripts\Activate.ps1
+
+
+####################
+fly io
+####################
+
 # signup
 flyctl auth signup
 
