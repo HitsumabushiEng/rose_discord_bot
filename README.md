@@ -83,6 +83,10 @@ KEYWORDS_CHECK = ["✅", "☑️", "✔️"]
 
 -------------------------
 
+CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
+
+-------------------------
+
 # 自動削除関係の時間設定
 CLEAN_ACTIVE = True  # 自動削除を行うか否か
 ZONE = ZoneInfo("Asia/Tokyo")
