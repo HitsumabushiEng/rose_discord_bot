@@ -23,6 +23,7 @@ import discord
 #########################################
 # System 環境変数の設定
 DB_NAME = "System.db"
+DUMMY_CUE_ID_FOR_BUNNY = 0
 
 
 #########################################
@@ -115,9 +116,26 @@ def init():
 def insert_record(cue: discord.Message, post: discord.Message):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    _record = record(
-        post.id, cue.id, cue.channel.id, cue.created_at, cue.author.id, cue.guild.id
-    )
+
+    match cue:
+        case None:
+            _record = record(
+                post.id,
+                DUMMY_CUE_ID_FOR_BUNNY,
+                post.channel.id,
+                post.created_at,
+                post.author.id,
+                post.guild.id,
+            )
+        case _:
+            _record = record(
+                post.id,
+                cue.id,
+                cue.channel.id,
+                cue.created_at,
+                cue.author.id,
+                cue.guild.id,
+            )
     cur.execute(INSERT_RECORDS, _record.row)
     conn.commit()
     conn.close()
@@ -159,6 +177,20 @@ def select_record_by_cue_message(
         _record = record(*_row)
     conn.close()
     return _record
+
+
+def select_records_by_cue_message(
+    m_id: discord.Message.id, g_id: discord.Guild.id
+) -> list[record]:
+    _records = []
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
+    for row in cur:
+        if row is not None:
+            _records.append(record(*row))
+    conn.close()
+    return _records
 
 
 def select_record_by_post_message(

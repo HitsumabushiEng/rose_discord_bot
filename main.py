@@ -2,6 +2,11 @@
 # TODO LIST
 #
 #   ・Bot書き込み用Ch名を変更できるようにする?
+#   ・クラス化して整理したい。
+#   ・うさぎの来る時間を調べる
+#   ・imgのリンクが貼られたときの動作を修正する。
+#   ・うさぎさんタスクのSeqを辞書化
+#   ・sqlの要素名を辞書化
 #
 # DONE
 #   ・BOTのメッセージ全削除コマンドを追加する
@@ -29,6 +34,7 @@ from discord.ext import commands, tasks
 
 from datetime import datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
+import re
 
 ##
 import sql as sql
@@ -44,6 +50,8 @@ KEYWORDS_CHECK = ["✅", "☑️", "✔️"]
 EMOJI_CHECK = [discord.partial_emoji.PartialEmoji.from_str(s) for s in KEYWORDS_CHECK]
 
 INFO_ATTACHED_FILE = "その他添付ファイルあり"
+INFO_SET_BUNNY = "次回のウサギをセットしました"
+CAUTION_COMMAND_ERROR = "コマンドまちがってない?"
 
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
@@ -56,6 +64,11 @@ CLEAN_ACTIVE = True  # 自動削除を行うか否か
 ZONE = ZoneInfo("Asia/Tokyo")
 CLEAN_TIME = time(hour=4, minute=0, second=0, tzinfo=ZONE)
 CLEAN_DAY = 1  # 0:月曜日、1:火曜日
+
+# うさぎさんタイマー用
+BUNNY_TIMER_ACTIVE = True  # 自動削除を行うか否か
+# NEXT_BUNNY = time(hour=4, minute=0, second=0, tzinfo=ZONE)  # 次回ウサギが来る時間変数
+
 #########################################
 # System 環境変数の設定
 
@@ -219,8 +232,9 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
                 await update_post(target=message, base=cue, isActive=True)
 
 
+# クリアコマンド
 @client.command()
-async def clear(ctx):
+async def clear(ctx: commands.Context):
     if ctx.message.content == BOT_PREFIX + "clear":  # コマンドだけに限定。
         await clear_user_guild_post(ctx.guild.id, ctx.author.id)
         msg = await ctx.send("--- your posts cleared ---")
@@ -233,7 +247,7 @@ async def clear(ctx):
 
 @client.command()
 @commands.has_permissions(manage_messages=True)
-async def clear_all(ctx):
+async def clear_all(ctx: commands.Context):
     if ctx.message.content == BOT_PREFIX + "clear_all":  # コマンドだけに限定。
         await clear_guild_all_post(ctx.guild.id)
         msg = await ctx.send("--- all posts cleared ---")
@@ -244,15 +258,53 @@ async def clear_all(ctx):
         pass
 
 
+# ウサギさんタイマーコマンド
+@client.command()
+async def usagi(ctx: commands.Context):
+    if "stop" in ctx.message.content:
+        await bunny_message_manage(ctx, datetime.now(), "suspend")
+        usagi.stop()
+
+    else:
+        t_str = re.search(
+            r"([0-2 ０-２]){0,1}[0-9 ０-９]{1}[:：][0-5 ０-５]{0,1}[0-9 ０-９]{1}",
+            ctx.message.content,
+        )
+        if t_str is not None:
+            t_list = re.split("[:：]", t_str.group())
+            t_delta = timedelta(hours=float(t_list[0]), minutes=float(t_list[1]))
+            dt_next = datetime.now(tz=ZONE) + t_delta
+
+            next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=ZONE)
+
+            usagi.change_interval(time=next)
+
+            await post_bunny(ctx.guild.id, dt_next, seq="interval")
+
+            try:
+                usagi.start(ctx, "on_bunny")
+            except:
+                usagi.restart(ctx, "on_bunny")
+
+        else:
+            msg = await ctx.send(CAUTION_COMMAND_ERROR)
+            await asyncio.sleep(COMMAND_FB_TIME)
+            await msg.delete()
+
+    await ctx.message.delete()
+
+    return
+
+
 #########################################
 # 定期実行ルーチン
 #########################################
 
 
+# 自動消去ルーチン
 @tasks.loop(time=CLEAN_TIME, reconnect=True)
-# @tasks.loop(seconds=30, reconnect=True)
 async def clean():
-    now = datetime.now()
+    now = datetime.now(tz=ZONE)
 
     if now.weekday() % 7 == CLEAN_DAY and CLEAN_ACTIVE:  # 決まった曜日のみ実行
         print("定期動作作動")
@@ -264,9 +316,51 @@ async def clean():
             ):  # Reactionが0じゃなかったら
                 await delete_post_by_record(r, POST=True, DB=True)
                 print("削除 : ", r)
-
     else:
         pass
+
+
+# @tasks.loop(seconds=10, reconnect=True, count=3)
+@tasks.loop(hours=30, reconnect=True, count=5)
+async def usagi(ctx: commands.Context, seq: str):
+    match seq:
+        case "on_bunny":
+            dt_next = datetime.now(tz=ZONE) + timedelta(minutes=10)
+            # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=1)
+            next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=ZONE)
+
+            await bunny_message_manage(ctx, dt_next, seq)
+
+            usagi.change_interval(time=next)
+            usagi.restart(ctx, "interval")
+
+        case "interval":
+            dt_next = datetime.now(tz=ZONE) + timedelta(hours=1, minutes=30)
+            # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=2)
+            next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=ZONE)
+
+            await bunny_message_manage(ctx, dt_next, seq)
+
+            usagi.change_interval(time=next)
+            usagi.restart(ctx, "on_bunny")
+
+        case _:
+            usagi.stop()
+            print(ERROR_MESSAGE.format("うさぎタイマー"))
+
+
+async def bunny_message_manage(ctx: commands.Context, dt_next: datetime, seq: str):
+    rs = sql.select_records_by_cue_message(
+        m_id=sql.DUMMY_CUE_ID_FOR_BUNNY, g_id=ctx.guild.id
+    )
+    for r in rs:
+        await delete_post_by_record(r, POST=True, DB=True)
+
+    now = datetime.now(tz=ZONE)
+    if 7 <= now.hour and now.hour <= 23:
+        await post_bunny(ctx.guild.id, dt_next, seq)
+    else:
+        await post_bunny(ctx.guild.id, dt_next, "suspend")
 
 
 #########################################
@@ -398,6 +492,7 @@ async def gen_embed_from_message(
     _m = await _g.fetch_member(message.author.id)
     _n = _m.display_name
     _l = MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
+    _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
 
     _c = message.content
     for s in KEYWORDS_PIN:
@@ -407,12 +502,11 @@ async def gen_embed_from_message(
         _e.color = ACTIVE_COLOR
     else:
         _e.color = INACTIVE_COLOR
-        _l = INACTIVE_MARKUP_SYMBOLS + _l + INACTIVE_MARKUP_SYMBOLS
         if _c:  # 空文字の場合は|| || で囲わない。
             _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
 
     _e.set_author(name=_n, icon_url=_m.display_avatar.url)
-    _e.add_field(name=_l, value=_c)
+    _e.add_field(name=_c, value=_l)
 
     _es.append(_e)
     _as = message.attachments
@@ -452,6 +546,28 @@ async def isNoUserCheckReactions(
             if user in reaction_users:
                 return False
     return True
+
+
+########### for うさぎさん
+async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
+    match seq:
+        case "interval":
+            msg = await client.get_channel(guild_channel_map[g_id]).send(
+                "次のウサギは" + dt_next.strftime("%H時%M分") + "ごろに来ます"
+            )
+        case "on_bunny":
+            msg = await client.get_channel(guild_channel_map[g_id]).send("うさぎが来ている頃です")
+
+        case "suspend":
+            msg = None
+        case _:
+            msg = None
+
+    if msg is not None:
+        sql.insert_record(cue=None, post=msg)
+
+
+########### Clear
 
 
 # Clear all posts
