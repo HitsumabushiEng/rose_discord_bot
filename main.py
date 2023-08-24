@@ -506,7 +506,7 @@ async def gen_embed_from_message(
             _c = INACTIVE_MARKUP_SYMBOLS + _c + INACTIVE_MARKUP_SYMBOLS
 
     _e.set_author(name=_n, icon_url=_m.display_avatar.url)
-    _e.add_field(name=_c, value=_l)
+    _e.add_field(name=_l, value=_c)
 
     _es.append(_e)
     _as = message.attachments
