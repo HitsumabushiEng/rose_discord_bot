@@ -214,11 +214,11 @@ async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
     match seq:
         case "interval":
             msg = await client.get_channel(g.guild_channel_map[g_id]).send(
-                "次のウサギは" + dt_next.strftime("%H時%M分") + "ごろに来ます"
+                g.INFO_NEXT_BUNNY.format(dt_next.strftime("%H時%M分"))
             )
         case "on_bunny":
             msg = await client.get_channel(g.guild_channel_map[g_id]).send(
-                "うさぎが来ている頃です"
+                g.INFO_BUNNY_NOW
             )
 
         case "suspend":

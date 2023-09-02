@@ -11,7 +11,11 @@ EMOJI_CHECK = [discord.partial_emoji.PartialEmoji.from_str(s) for s in KEYWORDS_
 
 INFO_ATTACHED_FILE = "その他添付ファイルあり"
 INFO_SET_BUNNY = "次回のウサギをセットしました"
+INFO_BUNNY_NOW = "うさぎが来ている頃です"
+INFO_NEXT_BUNNY = "次のウサギは{}ごろに来ます"
+
 CAUTION_COMMAND_ERROR = "コマンドまちがってない?"
+
 
 CHANNEL = "簡易ピン留め"  # Botの投稿先チャネル名
 COMMAND_FB_TIME = 2  # unit:second
