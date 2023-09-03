@@ -9,25 +9,24 @@
 #   post_list
 # Data：
 #   post_message_ID INTEGER     PRIMARY KEY,
-#   cue_message_ID  INTEGER
-#   cue_channel_ID  INTEGER
+#   cue_message_ID  INTEGER     # Null for bunny
+#   cue_channel_ID  INTEGER     # Null for bunny
 #   created_at      TEXT        NOT NULL,
 #   author          INTEGER     NOT NULL,
-#   guild           INTEGER     NOT NULL
+#   guild           INTEGER     NOT NULL,
+#   app_name        TEXT        NOT NULL,
 #
 #########################################
-
 import sqlite3
 import discord
 
 #########################################
 # System 環境変数の設定
 DB_NAME = "System.db"
-DUMMY_CUE_ID_FOR_BUNNY = 0
 
 
 #########################################
-# データクラス定義
+# Data class
 #########################################
 class record:
     row = {}
@@ -36,7 +35,14 @@ class record:
         self = None
 
     def __init__(
-        self, post_message_ID, cue_message_ID, cue_channel_ID, created_at, author, guild
+        self,
+        post_message_ID,
+        cue_message_ID,
+        cue_channel_ID,
+        created_at,
+        author,
+        guild,
+        app_name,
     ):
         self.row = {
             "post_message_ID": post_message_ID,
@@ -45,6 +51,7 @@ class record:
             "created_at": created_at,
             "author": author,
             "guild": guild,
+            "app_name": app_name,
         }
 
 
@@ -59,25 +66,27 @@ CREATE_TABLE = """
             cue_channel_ID INTEGER,
             created_at TEXT NOT NULL,
             author INTEGER NOT NULL,
-            guild INTEGER NOT NULL
+            guild INTEGER NOT NULL,
+            app_name TEXT NOT NULL
             );
     """
 INSERT_RECORDS = """
     INSERT INTO
-    post_list (post_message_ID, cue_message_ID, cue_channel_ID, created_at, author, guild)
-    VALUES (:post_message_ID, :cue_message_ID, :cue_channel_ID, :created_at, :author, :guild);
+    post_list (post_message_ID, cue_message_ID, cue_channel_ID, created_at, author, guild, app_name)
+    VALUES (:post_message_ID, :cue_message_ID, :cue_channel_ID, :created_at, :author, :guild,:app_name);
     """
-SELECT_ALL_VALUE = "SELECT * FROM post_list;"
 
+SELECT_ALL_VALUE = "SELECT * FROM post_list;"
 SELECT_PAST_RECORDS = (
     "SELECT * FROM post_list WHERE created_at < datetime('now','-4 hours');"
 )
 SELECT_GUILD_ALL_VALUE = "SELECT * FROM post_list where guild=:guild;"
-
+SELECT_GUILD_BUNNY_VALUE = (
+    "SELECT * FROM post_list where guild=:guild AND app_name=:app_name;"
+)
 SELECT_USER_GUILD_VALUE = (
     "SELECT * FROM post_list where guild=:guild AND author=:author;"
 )
-
 SELECT_VALUE_BY_CUE_MESSAGE = """
     SELECT * FROM post_list
     where cue_message_ID=:ID AND guild=:guild;
@@ -86,8 +95,8 @@ SELECT_VALUE_BY_POST_MESSAGE = """
     SELECT * FROM post_list
     where post_message_ID=:ID AND guild=:guild;
 """
-DELETE_GUILD_ALL_VALUE = "DELETE FROM post_list where guild=:guild;"
 
+DELETE_GUILD_ALL_VALUE = "DELETE FROM post_list where guild=:guild;"
 DELETE_VALUE_BY_CUE_MESSAGE = """
     DELETE FROM post_list
     where cue_message_ID=:ID AND guild=:guild;
@@ -99,141 +108,154 @@ DELETE_VALUE_BY_POST_MESSAGE = """
 
 
 #########################################
-# DB操作Function
+# Super Class
 #########################################
-def init():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(CREATE_TABLE)
-    conn.commit()
-    cur.execute(SELECT_ALL_VALUE)
-    for r in cur:
-        print(*r)
+class SQL:
+    app_name = "default"
 
-    conn.close()
+    def __init__(self) -> None:
+        self.conn = sqlite3.connect(DB_NAME)
+        self.cur = self.conn.cursor()
 
+    def __del__(self):
+        self.cur.close()
 
-def insert_record(cue: discord.Message, post: discord.Message):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+    #########################################
+    # DB操作Function
+    #########################################
+    def init(self):
+        self.cur.execute(CREATE_TABLE)
+        self.conn.commit()
+        self.cur.execute(SELECT_ALL_VALUE)
+        for r in self.cur:
+            print(*r)
 
-    match cue:
-        case None:
-            _record = record(
-                post.id,
-                DUMMY_CUE_ID_FOR_BUNNY,
-                post.channel.id,
-                post.created_at,
-                post.author.id,
-                post.guild.id,
-            )
-        case _:
-            _record = record(
-                post.id,
-                cue.id,
-                cue.channel.id,
-                cue.created_at,
-                cue.author.id,
-                cue.guild.id,
-            )
-    cur.execute(INSERT_RECORDS, _record.row)
-    conn.commit()
-    conn.close()
+    def insert_record(self, cue: discord.Message, post: discord.Message):
+        _record = record(
+            post.id,
+            cue.id,
+            cue.channel.id,
+            cue.created_at,
+            cue.author.id,
+            cue.guild.id,
+            self.app_name,
+        )
 
+        self.cur.execute(INSERT_RECORDS, _record.row)
+        self.conn.commit()
 
-def select_guild_all_records(g_id) -> list[record]:
-    _records = []
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_GUILD_ALL_VALUE, {"guild": g_id})
-    for row in cur:
-        if row is not None:
-            _records.append(record(*row))
-    conn.close()
-    return _records
+    def select_guild_all_records(self, g_id) -> list[record]:
+        _records = []
 
+        self.cur.execute(SELECT_GUILD_ALL_VALUE, {"guild": g_id})
+        for row in self.cur:
+            if row is not None:
+                _records.append(record(*row))
+        return _records
 
-def select_user_guild_records(g_id, u_id) -> list[record]:
-    _records = []
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id, "author": u_id})
-    for row in cur:
-        if row is not None:
-            _records.append(record(*row))
-    conn.close()
-    return _records
+    def select_user_guild_records(self, g_id, u_id) -> list[record]:
+        _records = []
 
+        self.cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id, "author": u_id})
+        for row in self.cur:
+            if row is not None:
+                _records.append(record(*row))
+        return _records
 
-def select_record_by_cue_message(
-    m_id: discord.Message.id, g_id: discord.Guild.id
-) -> record:
-    _record = None
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-    _row = cur.fetchone()
-    if _row is not None:
-        _record = record(*_row)
-    conn.close()
-    return _record
+    def select_record_by_post_message(
+        self, m_id: discord.Message.id, g_id: discord.Guild.id
+    ) -> record:
+        _record = None
 
+        self.cur.execute(SELECT_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
+        _row = self.cur.fetchone()
+        if _row is not None:
+            _record = record(*_row)
+        return _record
 
-def select_records_by_cue_message(
-    m_id: discord.Message.id, g_id: discord.Guild.id
-) -> list[record]:
-    _records = []
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-    for row in cur:
-        if row is not None:
-            _records.append(record(*row))
-    conn.close()
-    return _records
+    def select_records_before_yesterday(self) -> list[record]:
+        _records = []
+
+        self.cur.execute(SELECT_PAST_RECORDS)
+        for row in self.cur:
+            if row is not None:
+                _records.append(record(*row))
+        return _records
+
+    #######
+
+    def delete_record_by_post_message(
+        self, m_id: discord.Message.id, g_id: discord.Guild.id
+    ):
+        self.cur.execute(DELETE_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
+        self.conn.commit()
 
 
-def select_record_by_post_message(
-    m_id: discord.Message.id, g_id: discord.Guild.id
-) -> record:
-    _record = None
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(SELECT_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
-    _row = cur.fetchone()
-    if _row is not None:
-        _record = record(*_row)
-    conn.close()
-    return _record
+#########################################
+# Sub Class
+#########################################
+class pinSQL(SQL):
+    app_name = "pin"
+
+    #########################################
+    # DB操作Function
+    #########################################
+    def select_record_by_cue_message(
+        self, m_id: discord.Message.id, g_id: discord.Guild.id
+    ) -> record:
+        _record = None
+
+        self.cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
+        _row = self.cur.fetchone()
+        if _row is not None:
+            _record = record(*_row)
+        return _record
+
+    def select_records_by_cue_message(
+        self, m_id: discord.Message.id, g_id: discord.Guild.id
+    ) -> list[record]:
+        _records = []
+
+        self.cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
+        for row in self.cur:
+            if row is not None:
+                _records.append(record(*row))
+        return _records
+
+    def delete_record_by_cue_message(
+        self, m_id: discord.Message.id, g_id: discord.Guild.id
+    ):
+        self.cur.execute(DELETE_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
+        self.conn.commit()
 
 
-def select_records_before_yesterday() -> list[record]:
-    _records = []
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+class bunnySQL(SQL):
+    app_name = "bunny"
 
-    cur.execute(SELECT_PAST_RECORDS)
-    for row in cur:
-        if row is not None:
-            _records.append(record(*row))
-    conn.close()
-    return _records
+    #########################################
+    # DB操作Function
+    #########################################
+    def insert_record(self, post: discord.Message):
+        _record = record(
+            post.id,
+            None,
+            None,
+            post.created_at,
+            post.author.id,
+            post.guild.id,
+            self.app_name,
+        )
 
+        self.cur.execute(INSERT_RECORDS, _record.row)
+        self.conn.commit()
 
-#######
+    def select_guild_bunny_records(self, g_id) -> list[record]:
+        _records = []
 
+        self.cur.execute(SELECT_GUILD_BUNNY_VALUE, {"guild": g_id, "app_name": "bunny"})
 
-def delete_record_by_cue_message(m_id: discord.Message.id, g_id: discord.Guild.id):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-    conn.commit()
-    conn.close()
+        for row in self.cur:
+            if row is not None:
+                _records.append(record(*row))
 
-
-def delete_record_by_post_message(m_id: discord.Message.id, g_id: discord.Guild.id):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(DELETE_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
-    conn.commit()
-    conn.close()
+        return _records

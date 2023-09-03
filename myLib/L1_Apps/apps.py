@@ -9,6 +9,8 @@ from datetime import datetime
 
 ##
 import myLib.L2_SystemIO.sql as sql
+from myLib.L2_SystemIO.sql import record as record
+
 import myLib.L1_Apps.setting as g
 
 
@@ -46,7 +48,7 @@ async def check_and_activate(_cue: discord.Message):
         return
 
     # 投稿済みレコードの検索
-    _record = sql.select_record_by_cue_message(_cue.id, _cue.guild.id)
+    _record = sql.pinSQL().select_record_by_cue_message(_cue.id, _cue.guild.id)
 
     if _record is None:  # DBに書き込み元メッセージの情報がない場合
         if any((s in _cue.content) for s in g.KEYWORDS_PIN):
@@ -97,7 +99,7 @@ async def get_message_by_payload(
 
 
 # レコードからメッセージを取得
-async def get_message_by_record(r: sql.record, isPost: bool = True) -> discord.Message:
+async def get_message_by_record(r: record, isPost: bool = True) -> discord.Message:
     g_id = r.row["guild"]
 
     if isPost:
@@ -123,7 +125,7 @@ async def new_post(_cue: discord.Message):
         msg = await client.get_channel(g.guild_channel_map[_cue.guild.id]).send(
             embeds=_embeds
         )
-        sql.insert_record(cue=_cue, post=msg)
+        sql.pinSQL().insert_record(cue=_cue, post=msg)
     except:
         print(g.ERROR_MESSAGE.format("new_post()"))
 
@@ -227,7 +229,7 @@ async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
             msg = None
 
     if msg is not None:
-        sql.insert_record(cue=None, post=msg)
+        sql.bunnySQL().insert_record(post=msg)
 
 
 ########### Clear
@@ -235,14 +237,14 @@ async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
 
 # Clear all posts
 async def clear_guild_all_post(g_id):
-    records = sql.select_guild_all_records(g_id)
+    records = sql.SQL().select_guild_all_records(g_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
 
 # Clear own posts
 async def clear_user_guild_post(g_id, u_id):
-    records = sql.select_user_guild_records(g_id, u_id)
+    records = sql.SQL().select_user_guild_records(g_id, u_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
@@ -255,4 +257,4 @@ async def delete_post_by_record(r, POST=False, DB=False):
     if DB:
         m_id = r.row["post_message_ID"]
         g_id = r.row["guild"]
-        sql.delete_record_by_post_message(m_id, g_id)
+        sql.SQL().delete_record_by_post_message(m_id, g_id)
