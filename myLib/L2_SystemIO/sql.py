@@ -114,8 +114,11 @@ class SQL:
     app_name = "default"
 
     def __init__(self) -> None:
-        self.conn = sqlite3.connect(DB_NAME)
-        self.cur = self.conn.cursor()
+        try:
+            self.conn = sqlite3.connect(DB_NAME)
+            self.cur = self.conn.cursor()
+        except:
+            pass
 
     def __del__(self):
         self.cur.close()
