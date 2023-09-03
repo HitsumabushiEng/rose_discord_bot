@@ -1,0 +1,217 @@
+@startuml class
+title Rose
+package Discord{
+    class DiscordServer{
+        ---
+        + login()
+    }
+
+    class Guild{
+        - id : int
+        - Channels:[Channel]
+        ---
+        + join()
+        + remove()
+    }
+
+    class Channel{
+        - id : int
+        - name : string
+        - Messages:[Message]
+        ---
+        + send()
+    }
+
+    class Message{
+        - id : int
+        - content : string
+        - embeds : [Embed]
+        - reactions : [Reaction]
+        - author : int
+        ---
+        + delete()
+        + edit()
+        + add_reaction()
+        + remove_reaction()
+    }
+
+    class Embed{
+        - color : Colour
+        - author.name : string
+        - author.icon_url : string
+        - field.name : string
+        - field.value : string
+        - image : Image
+        ---
+        + set_authour()
+        + add_field()
+        + set_image()
+    }
+
+    class Reaction{
+        - count : int
+        - emoji : string
+        ---
+    }
+}
+
+package Discord_IO{
+    class EventHandler{
+        ---
+        on_ready()
+
+        on_guild_join()
+        on_guild_remove()
+        
+        message_listener()
+        
+        on_raw_message_edit()
+        on_raw_message_delete()
+        on_raw_reaction_add()
+        on_raw_reaction_remove()
+
+        command.clear()
+        command.clear_all()
+        command.usagi()
+
+        tasks.loop.clean()
+        tasks.loop.usagi()
+    }
+
+    abstract class User{
+        - id : int
+        - name : string
+        - Bot : bool
+        ---
+        + display_name : 
+    }
+
+    class Bot{
+        ---
+        + send()
+        + edit()
+        + delete()
+    }
+}
+
+package Apps{
+    class AutoPin{
+        ---
+        + pin()
+        + unpin()
+        + seal()
+        + unseal()
+    }
+
+    class BunnyTimer{
+        - seq : string
+        - next : time
+        ---
+        + set_bunny()
+        + reset_bunny()
+        + catch_bunny()
+        + end_bunny()
+
+        + inform_next()
+        + inform_bunny()
+    }
+}
+
+package SQL_IO{
+    class SQL{
+        - app_name
+        - conn
+        - cur
+        ---
+        + init()
+
+        + insert_record()
+
+        + select_guild_all_records()
+        + select_user_guild_records()
+        + select_record_by_post_message()
+        + select_records_before_yesterday()
+
+        + delete_record_by_post_message()
+    }
+    class pinSQL{
+        - app_name
+        ---
+        + select_record_by_cue_message()
+        + select_records_by_cue_message()
+        + delete_record_by_cue_message()
+    }
+
+    class bunnySQL{
+        - app_name
+        ---
+        + insert_record()
+        + select_guild_bunny_records()
+    }
+}
+
+package History <<database>>{
+    class record{
+        - post_message : int
+        - cue_message : int
+        - cue_message.ch : int
+        - created_at : datetime
+        - author : int
+        - guild : int
+        ---
+    }
+}
+
+
+'---Relations-------------------------
+
+'Type	        Symbol
+'Extension	    <|--	
+'Composition	*--	
+'Aggregation	o--	
+
+''''''''''''''''''''''''''''
+' relation internal package
+''''''''''''''''''''''''''''
+' relation in package Discord
+DiscordServer   *-      Guild
+Guild           *-      Channel
+Channel         *-      Message
+Message         *-      Embed
+Message         *-      Reaction
+
+' relation in package Discord_IO
+Bot             -|>     User
+
+
+' relation in package Apps
+
+
+' relation in package SQL_IO
+pinSQL         -|>     SQL
+bunnySQL       -|>     SQL
+
+
+''''''''''''''''''''''''''''
+' relation over package
+''''''''''''''''''''''''''''
+' relation btw. Discord and Discord_IO
+Discord         <--     Bot : use
+Discord         -->     EventHandler : call
+
+
+' relation btw. Discord_IO and Apps
+EventHandler    -->     AutoPin : call
+EventHandler    -->     BunnyTimer : call
+Bot             <--     AutoPin : use
+Bot             <--     BunnyTimer : use
+
+' relation btw. Apps and SQL_IO
+AutoPin         *--     pinSQL
+BunnyTimer      *--     bunnySQL
+
+' relation btw. SQL_IO and database
+SQL             ->      History : set/get
+
+
+@enduml
