@@ -17,7 +17,7 @@ import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
 
 
-class General(commands.Cog):
+class GeneralCog(commands.Cog):
     def __init__(self, bot):
         self.client = bot
 
@@ -56,7 +56,7 @@ class General(commands.Cog):
             pass
 
 
-class AutoPin(commands.Cog):
+class AutoPinCog(commands.Cog):
     def __init__(self, bot):
         self.client = bot
 
@@ -203,7 +203,7 @@ class AutoPin(commands.Cog):
             pass
 
 
-class BunnyTimer(commands.Cog):
+class BunnyTimerCog(commands.Cog):
     def __init__(self, bot):
         self.client = bot
 

@@ -57,9 +57,9 @@ cogs.setClient(client)
 # イベントリスナーの登録
 @client.event
 async def setup_hook():
-    await client.add_cog(cogs.General(client))
-    await client.add_cog(cogs.AutoPin(client))
-    await client.add_cog(cogs.BunnyTimer(client))
+    await client.add_cog(cogs.GeneralCog(client))
+    await client.add_cog(cogs.AutoPinCog(client))
+    await client.add_cog(cogs.BunnyTimerCog(client))
 
 
 # クライアント起動
