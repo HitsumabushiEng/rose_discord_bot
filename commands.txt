@@ -1,6 +1,13 @@
 # Activate env.
 .\.venv\Scripts\Activate.ps1
 
+####################
+class diagram generate
+####################
+
+pip install pylint
+pyreverse -o png -p rose .\
+pip uninstall pylint
 
 ####################
 fly io
