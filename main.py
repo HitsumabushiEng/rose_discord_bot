@@ -18,7 +18,7 @@ import myLib.L2_SystemIO.discordIO as d_IO
 #########################################
 DEBUG_MODE = "Earnest_dev"
 # DEBUG_MODE = "Rose_dev"
-DEBUG_MODE = "Deploy"
+# DEBUG_MODE = "Deploy"
 
 # DBの初期接続
 SQL.init()

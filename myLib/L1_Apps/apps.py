@@ -11,7 +11,7 @@ from myLib.L0_Core.historyCtrl import record, HistoryCtrl
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
 from myLib.L0_Core.botCtrl import BotCtrl
 
-from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
+from myLib.L2_SystemIO.sql import SQL, bunnySQL
 
 import myLib.L1_Apps.setting as g
 
@@ -109,7 +109,10 @@ class AutoPin:
             return
 
         # 投稿済みレコードの検索
-        _record = pinSQL.select_record_by_cue_message(_cue.id, _cue.guild.id)
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.CUE_ID, _cue.id))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, _cue.guild.id))
+        _record = self.sqlIO.getHistory(conditions=conditions)
 
         if _record is None:  # DBに書き込み元メッセージの情報がない場合
             if any((s in _cue.content) for s in g.KEYWORDS_PIN):
@@ -141,6 +144,18 @@ class AutoPin:
         return
 
 
+class BunnyTimer:
+    def __init__(self, sqlIO: HistoryCtrl, botIO: BotCtrl) -> None:
+        self.sqlIO = sqlIO
+        self.botIO = botIO
+
+    def __del__(self) -> None:
+        pass
+
+    async def set_bunny():
+        pass
+
+
 ################################################
 # ここから下を削除する
 ################################################
@@ -148,10 +163,10 @@ class AutoPin:
 #########################################
 # Receive client from main function.
 #########################################
-client: commands.bot
+client: commands.Bot
 
 
-def setClient(_client: commands.bot):
+def setClient(_client: commands.Bot):
     global client
     client = _client
 
@@ -170,9 +185,6 @@ def register_guild_ch(_g: discord.Guild):
 
 def erase_guild_ch(_gid: discord.Guild.id):
     del g.guild_channel_map[_gid]
-
-
-# メッセージが投稿・編集された時の処理
 
 
 # イベントペイロードからメッセージを取得

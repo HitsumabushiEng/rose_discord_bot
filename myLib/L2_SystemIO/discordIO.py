@@ -7,6 +7,8 @@ from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta
 import re
 
+from discord.guild import Guild
+
 ##
 from myLib.L0_Core.botCtrl import BotCtrl
 from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
@@ -24,9 +26,7 @@ apps.setClient(client)
 
 
 class Bot(BotCtrl):
-    client: commands.bot
-
-    def __init__(self, client) -> None:
+    def __init__(self, client: commands.Bot) -> None:
         self.client = client
         pass
 
@@ -36,8 +36,7 @@ class Bot(BotCtrl):
     async def send(
         self, gID: discord.Guild.id, chID: discord.TextChannel.id, content: str
     ) -> discord.Message:
-        msg = await self.client.get_guild(gID).get_channel(chID).send(content=content)
-        return msg
+        return await self.client.get_guild(gID).get_channel(chID).send(content=content)
 
     async def sendEmbeds(
         self,
@@ -45,8 +44,7 @@ class Bot(BotCtrl):
         chID: discord.TextChannel.id,
         embeds: [discord.Embed],
     ) -> discord.Message:
-        msg = await self.client.get_guild(gID).get_channel(chID).send(embeds=embeds)
-        return msg
+        return await self.client.get_guild(gID).get_channel(chID).send(embeds=embeds)
 
     @staticmethod
     async def edit(target: discord.Message, embeds: [discord.Embed]):

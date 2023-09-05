@@ -8,7 +8,7 @@ from discord.ext import commands
 # Data controller interface
 #########################################
 class BotCtrl(metaclass=ABCMeta):
-    client: commands.bot
+    client: commands.Bot
 
     @abstractmethod
     def send(
