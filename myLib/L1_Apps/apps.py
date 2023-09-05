@@ -103,46 +103,6 @@ class AutoPin:
 
         return _es
 
-    async def check_and_activate(self, _cue: discord.Message):
-        # チェックのリアクションがついている場合、何もしない。
-        if not await isNoUserCheckReactions(_cue, _cue.author.id):
-            return
-
-        # 投稿済みレコードの検索
-        conditions = []
-        conditions.append(SQLCondition(SQLFields.CUE_ID, _cue.id))
-        conditions.append(SQLCondition(SQLFields.GUILD_ID, _cue.guild.id))
-        _record = self.sqlIO.getHistory(conditions=conditions)
-
-        if _record is None:  # DBに書き込み元メッセージの情報がない場合
-            if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-                await self.pinToChannel(_cue)
-            else:
-                pass
-
-        else:  # DBに書き込み元メッセージの情報がある場合
-            c_id = g.guild_channel_map[_record.guildID]
-            m_id = _record.postID
-
-            try:
-                post = await self.botIO.client.get_channel(c_id).fetch_message(m_id)
-            except:  # Bot停止中にPostが削除されており、404 Not found.
-                post = None
-
-            if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-                match post:
-                    case None:
-                        await self.pinToChannel(_cue)
-                    case case if isNullReaction(case):
-                        await self.seal(target=post, base=_cue, isSeal=False)
-                    case _:
-                        await self.seal(target=post, base=_cue, isSeal=True)
-
-            else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-                await self.unpin(_record)
-
-        return
-
 
 class BunnyTimer:
     def __init__(self, sqlIO: HistoryCtrl, botIO: BotCtrl) -> None:
@@ -174,17 +134,6 @@ def setClient(_client: commands.Bot):
 #########################################
 # Functions
 #########################################
-
-
-def register_guild_ch(_g: discord.Guild):
-    for c in _g.channels:
-        if c.name == g.CHANNEL:
-            ## guild id -> channel を紐づけ
-            g.guild_channel_map[_g.id] = c.id
-
-
-def erase_guild_ch(_gid: discord.Guild.id):
-    del g.guild_channel_map[_gid]
 
 
 # イベントペイロードからメッセージを取得
@@ -224,26 +173,6 @@ async def get_message_by_record(
         message = None
 
     return message
-
-
-# Reactionチェック
-def isNullReaction(message) -> bool:
-    return not bool(message.reactions)
-
-
-def isFirstReactionAdd(message) -> bool:
-    return len(message.reactions) == 1 and message.reactions[0].count == 1
-
-
-async def isNoUserCheckReactions(
-    message: discord.Message, user: discord.User.id
-) -> bool:
-    for r in message.reactions:
-        reaction_users = [u.id async for u in r.users()]
-        if any((s in r.emoji) for s in g.KEYWORDS_CHECK):
-            if user in reaction_users:
-                return False
-    return True
 
 
 ########### for うさぎさん
