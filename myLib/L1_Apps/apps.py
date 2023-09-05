@@ -1,5 +1,5 @@
-from typing import Union
-import asyncio
+from typing import Union, Optional
+from enum import Enum
 
 ##
 import discord
@@ -8,11 +8,62 @@ from discord.ext import commands
 from datetime import datetime
 
 ##
-import myLib.L2_SystemIO.sql as sql
-from myLib.L2_SystemIO.sql import record as record
+from myLib.L0_Core.historyCtrl import record, HistoryCtrl
+from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
+
+from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
+import myLib.L2_SystemIO.discordIO as disco
 
 import myLib.L1_Apps.setting as g
 
+
+#########################################
+# Apps
+#########################################
+class AutoPin:
+    def __init__(self, sqlIO: HistoryCtrl) -> None:
+        self.sqlIO = sqlIO
+
+    def __del__(self) -> None:
+        pass
+
+    async def pinToChannel(self, cue: discord.Message):
+        gID = cue.guild.id
+        chID = g.guild_channel_map[gID]
+        embeds = await gen_embed_from_message(cue, isActive=True)
+
+        try:
+            msg = await disco.Bot.sendEmbeds(gID=gID, chID=chID, embeds=embeds)
+            self.sqlIO.setHistory(post=msg, cue=cue)
+        except:
+            print(g.ERROR_MESSAGE.format("pinToChannel()"))
+
+    async def unpin(self, record: record):
+        gID = record.guildID
+        msgID = record.postID
+        chID = g.guild_channel_map[gID]
+
+        await disco.Bot.deleteMessage(gID=gID, chID=chID, msgID=msgID)
+
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.POST_ID, msgID))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, gID))
+        self.sqlIO.deleteHistory(conditions=conditions)
+
+    @staticmethod
+    async def seal(target: discord.Message, base: discord.Message, isSeal: bool):
+        _es = []
+        es = await gen_embed_from_message(base, isActive=(not isSeal))
+        _es.extend(es)
+        try:
+            await disco.Bot.edit(target=target, embeds=_es)
+        except:
+            print(g.ERROR_MESSAGE.format("seal()"))
+
+
+################################################
+# ここから下を削除する
+################################################
 
 #########################################
 # Receive client from main function.
@@ -48,17 +99,17 @@ async def check_and_activate(_cue: discord.Message):
         return
 
     # 投稿済みレコードの検索
-    _record = sql.pinSQL().select_record_by_cue_message(_cue.id, _cue.guild.id)
+    _record = pinSQL.select_record_by_cue_message(_cue.id, _cue.guild.id)
 
     if _record is None:  # DBに書き込み元メッセージの情報がない場合
         if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-            await new_post(_cue)
+            await AutoPin(pinSQL()).pinToChannel(_cue)
         else:
             pass
 
     else:  # DBに書き込み元メッセージの情報がある場合
-        c_id = g.guild_channel_map[_record.row["guild"]]
-        m_id = _record.row["post_message_ID"]
+        c_id = g.guild_channel_map[_record.guildID]
+        m_id = _record.postID
 
         try:
             post = await client.get_channel(c_id).fetch_message(m_id)
@@ -68,14 +119,14 @@ async def check_and_activate(_cue: discord.Message):
         if any((s in _cue.content) for s in g.KEYWORDS_PIN):
             match post:
                 case None:
-                    await new_post(_cue)
+                    await AutoPin(pinSQL()).pinToChannel(_cue)
                 case case if isNullReaction(case):
-                    await update_post(target=post, base=_cue, isActive=True)
+                    await AutoPin(pinSQL()).seal(target=post, base=_cue, isSeal=False)
                 case _:
-                    await update_post(target=post, base=_cue, isActive=False)
+                    await AutoPin(pinSQL()).seal(target=post, base=_cue, isSeal=True)
 
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            await delete_post_by_record(_record, POST=True, DB=True)
+            await AutoPin(pinSQL()).unpin(_record)
 
     return
 
@@ -86,7 +137,7 @@ async def get_message_by_payload(
         discord.RawMessageUpdateEvent,
         discord.RawReactionActionEvent,
     ],
-) -> discord.Message:
+) -> Optional[discord.Message]:
     try:
         message = (
             await client.get_guild(payload.guild_id)
@@ -99,15 +150,17 @@ async def get_message_by_payload(
 
 
 # レコードからメッセージを取得
-async def get_message_by_record(r: record, isPost: bool = True) -> discord.Message:
-    g_id = r.row["guild"]
+async def get_message_by_record(
+    r: record, isPost: bool = True
+) -> Optional[discord.Message]:
+    g_id = r.guildID
 
     if isPost:
         ch_id = g.guild_channel_map[g_id]
-        m_id = r.row["post_message_ID"]
+        m_id = r.postID
     else:
-        ch_id = r.row["cue_channel_ID"]
-        m_id = r.row["cue_message_ID"]
+        ch_id = r.cueChID
+        m_id = r.cueID
 
     try:
         message = await client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
@@ -115,19 +168,6 @@ async def get_message_by_record(r: record, isPost: bool = True) -> discord.Messa
         message = None
 
     return message
-
-
-# ポストの新規投稿
-async def new_post(_cue: discord.Message):
-    _embeds = []
-    _embeds = await gen_embed_from_message(_cue, isActive=True)
-    try:
-        msg = await client.get_channel(g.guild_channel_map[_cue.guild.id]).send(
-            embeds=_embeds
-        )
-        sql.pinSQL().insert_record(cue=_cue, post=msg)
-    except:
-        print(g.ERROR_MESSAGE.format("new_post()"))
 
 
 # InactiveになったポストのActivate
@@ -229,7 +269,7 @@ async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
             msg = None
 
     if msg is not None:
-        sql.bunnySQL().insert_record(post=msg)
+        bunnySQL.insert_record(post=msg, cue=None)
 
 
 ########### Clear
@@ -237,24 +277,22 @@ async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
 
 # Clear all posts
 async def clear_guild_all_post(g_id):
-    records = sql.SQL().select_guild_all_records(g_id)
+    records = SQL.select_guild_all_records(g_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
 
 # Clear own posts
 async def clear_user_guild_post(g_id, u_id):
-    records = sql.SQL().select_user_guild_records(g_id, u_id)
+    records = SQL.select_user_guild_records(g_id, u_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
 
 
-async def delete_post_by_record(r, POST=False, DB=False):
+async def delete_post_by_record(r: record, POST=False, DB=False):
     if POST:
         message = await get_message_by_record(r, isPost=True)
         if message is not None:
             await message.delete()
     if DB:
-        m_id = r.row["post_message_ID"]
-        g_id = r.row["guild"]
-        sql.SQL().delete_record_by_post_message(m_id, g_id)
+        SQL.delete_record_by_post_message(m_id=r.postID, g_id=r.guildID)

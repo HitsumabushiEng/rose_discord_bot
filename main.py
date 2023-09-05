@@ -27,7 +27,7 @@
 #   ・Bot書き込み用Chを作るようマニュアルに書く
 #   ・## for TEST ##をクリーンする
 
-import myLib.L2_SystemIO.sql as sql
+from myLib.L2_SystemIO.sql import SQL
 import myLib.L2_SystemIO.discordIO as d_IO
 
 #########################################
@@ -35,8 +35,7 @@ DEBUG_MODE = "Earnest_dev"
 # DEBUG_MODE = "Rose_dev"
 # DEBUG_MODE = "Deploy"
 
-
 # DBの初期接続
-sql.SQL().init()
+SQL.init()
 # クライアントの接続
 d_IO.activate_client(DEBUG_MODE=DEBUG_MODE)

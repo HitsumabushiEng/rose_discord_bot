@@ -19,40 +19,47 @@
 #########################################
 import sqlite3
 import discord
+from contextlib import closing
+from typing import Union, Optional
+from enum import Enum, auto
+
+from myLib.L0_Core.historyCtrl import HistoryCtrl
+from myLib.L0_Core.dataTypes import record, SQLCondition, SQLFields
 
 #########################################
 # System 環境変数の設定
 DB_NAME = "System.db"
 
-
 #########################################
-# Data class
+# Enum
 #########################################
-class record:
-    row = {}
+sqliteFieldName = {
+    SQLFields.POST_ID: "post_message_ID",
+    SQLFields.CUE_ID: "cue_message_ID",
+    SQLFields.CUE_CH_ID: "cue_channel_ID",
+    SQLFields.CREATED_AT: "created_at",
+    SQLFields.AUTHOR: "author",
+    SQLFields.GUILD_ID: "guild",
+    SQLFields.APP_NAME: "app_name",
+}
 
-    def __init__(self) -> None:
-        self = None
 
-    def __init__(
-        self,
-        post_message_ID,
-        cue_message_ID,
-        cue_channel_ID,
-        created_at,
-        author,
-        guild,
-        app_name,
-    ):
-        self.row = {
-            "post_message_ID": post_message_ID,
-            "cue_message_ID": cue_message_ID,
-            "cue_channel_ID": cue_channel_ID,
-            "created_at": created_at,
-            "author": author,
-            "guild": guild,
-            "app_name": app_name,
-        }
+class AppNames(Enum):
+    AUTO_PIN = "pin"
+    BUNNY_TIMER = "bunny"
+
+
+class Queries(Enum):
+    CREATE_TABLE = auto()
+    INSERT_RECORDS = auto()
+    SELECT_ALL_VALUE = auto()
+    SELECT_PAST_RECORDS = auto()
+    SELECT_GUILD_ALL_VALUE = auto()
+    SELECT_GUILD_BUNNY_VALUE = auto()
+    SELECT_USER_GUILD_VALUE = auto()
+    SELECT_VALUE_BY_CUE_MESSAGE = auto()
+    SELECT_VALUE_BY_POST_MESSAGE = auto()
+    DELETE_VALUE_BY_POST_MESSAGE = auto()
 
 
 #########################################
@@ -89,176 +96,304 @@ SELECT_USER_GUILD_VALUE = (
 )
 SELECT_VALUE_BY_CUE_MESSAGE = """
     SELECT * FROM post_list
-    where cue_message_ID=:ID AND guild=:guild;
+    where cue_message_ID=:cue_message_ID AND guild=:guild;
 """
 SELECT_VALUE_BY_POST_MESSAGE = """
     SELECT * FROM post_list
-    where post_message_ID=:ID AND guild=:guild;
+    where post_message_ID=:post_message_ID AND guild=:guild;
 """
 
-DELETE_GUILD_ALL_VALUE = "DELETE FROM post_list where guild=:guild;"
-DELETE_VALUE_BY_CUE_MESSAGE = """
-    DELETE FROM post_list
-    where cue_message_ID=:ID AND guild=:guild;
-"""
 DELETE_VALUE_BY_POST_MESSAGE = """
     DELETE FROM post_list
-    where post_message_ID=:ID AND guild=:guild;
+    where post_message_ID=:post_message_ID AND guild=:guild;
 """
+
+
+#########################################
+# Local function
+#########################################
+def query_of_getHistory(conditions: list[SQLCondition]) -> Optional[Queries]:
+    match dict(conditions):
+        case x if len(x) == 1 and SQLFields.CREATED_AT in x.keys():
+            return Queries.SELECT_PAST_RECORDS
+
+        case x if len(x) == 1 and SQLFields.GUILD_ID in x.keys():
+            return Queries.SELECT_GUILD_ALL_VALUE
+
+        case x if len(x) == 2 and SQLFields.APP_NAME in x.keys():
+            return Queries.SELECT_GUILD_BUNNY_VALUE
+
+        case x if len(x) == 2 and SQLFields.AUTHOR in x.keys():
+            return Queries.SELECT_USER_GUILD_VALUE
+
+        case x if len(x) == 2 and SQLFields.CUE_ID in x.keys():
+            return Queries.SELECT_VALUE_BY_CUE_MESSAGE
+
+        case x if len(x) == 2 and SQLFields.POST_ID in x.keys():
+            return Queries.SELECT_VALUE_BY_POST_MESSAGE
+
+        case _:
+            return None
 
 
 #########################################
 # Super Class
 #########################################
-class SQL:
-    app_name = "default"
+class SQL(HistoryCtrl):
+    appName = "default"
 
     def __init__(self) -> None:
-        try:
-            self.conn = sqlite3.connect(DB_NAME)
-            self.cur = self.conn.cursor()
-        except:
-            pass
+        pass
 
     def __del__(self):
-        self.cur.close()
+        pass
+
+    #########################################
+    # Implement interface functions
+    #########################################
+    @staticmethod
+    def init():
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(CREATE_TABLE)
+            con.commit()
+            cur.execute(SELECT_ALL_VALUE)
+            for r in cur:
+                print(*r)
+
+    #########################################
+    # There are some sub-class which extend this class.
+    # Sub-class unique function should be routed via each sub-class
+    #########################################
+    @classmethod
+    def getHistory(
+        cls, conditions: list[SQLCondition]
+    ) -> Optional[Union[record, list[record]]]:
+        query = query_of_getHistory(conditions)
+        d = dict(conditions)
+
+        match query:
+            case Queries.SELECT_PAST_RECORDS:
+                return cls.select_records_before_yesterday()
+
+            case Queries.SELECT_GUILD_ALL_VALUE:
+                return cls.select_guild_all_records(d.get(SQLFields.GUILD_ID))
+
+            case Queries.SELECT_USER_GUILD_VALUE:
+                return cls.select_user_guild_records(
+                    g_id=d.get(SQLFields.GUILD_ID),
+                    u_id=d.get(SQLFields.AUTHOR),
+                )
+
+            case Queries.SELECT_VALUE_BY_POST_MESSAGE:
+                return cls.select_record_by_post_message(
+                    g_id=d.get(SQLFields.GUILD_ID),
+                    m_id=d.get(SQLFields.POST_ID),
+                )
+
+            case _:
+                return None
+
+    @classmethod
+    def setHistory(cls, post: discord.Message, cue: Optional[discord.Message] = None):
+        return cls.insert_record(post=post, cue=cue)
+
+    @classmethod
+    def deleteHistory(cls, conditions: list[SQLCondition]):
+        d = dict(conditions)
+        return cls.delete_record_by_post_message(
+            m_id=d.get(SQLFields.POST_ID), g_id=d.get(SQLFields.GUILD_ID)
+        )
 
     #########################################
     # DB操作Function
     #########################################
-    def init(self):
-        self.cur.execute(CREATE_TABLE)
-        self.conn.commit()
-        self.cur.execute(SELECT_ALL_VALUE)
-        for r in self.cur:
-            print(*r)
+    @classmethod
+    def insert_record(cls, post: discord.Message, cue: discord.Message):
+        match cue:
+            case None:  # for Bunny and error case
+                _record = record(
+                    post.id,
+                    None,
+                    None,
+                    post.created_at,
+                    post.author.id,
+                    post.guild.id,
+                    cls.appName,
+                )
+            case _:  # for pin
+                _record = record(
+                    post.id,
+                    cue.id,
+                    cue.channel.id,
+                    cue.created_at,
+                    cue.author.id,
+                    cue.guild.id,
+                    cls.appName,
+                )
 
-    def insert_record(self, cue: discord.Message, post: discord.Message):
-        _record = record(
-            post.id,
-            cue.id,
-            cue.channel.id,
-            cue.created_at,
-            cue.author.id,
-            cue.guild.id,
-            self.app_name,
-        )
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(INSERT_RECORDS, _record)
+            con.commit()
 
-        self.cur.execute(INSERT_RECORDS, _record.row)
-        self.conn.commit()
-
-    def select_guild_all_records(self, g_id) -> list[record]:
+    @staticmethod
+    def select_guild_all_records(g_id) -> list[record]:
         _records = []
 
-        self.cur.execute(SELECT_GUILD_ALL_VALUE, {"guild": g_id})
-        for row in self.cur:
-            if row is not None:
-                _records.append(record(*row))
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                SELECT_GUILD_ALL_VALUE, {sqliteFieldName.get(SQLFields.GUILD_ID): g_id}
+            )
+            for row in cur:
+                if row is not None:
+                    _records.append(record(*row))
         return _records
 
-    def select_user_guild_records(self, g_id, u_id) -> list[record]:
+    @staticmethod
+    def select_user_guild_records(
+        g_id: discord.Guild.id, u_id: discord.Member.id
+    ) -> list[record]:
         _records = []
 
-        self.cur.execute(SELECT_USER_GUILD_VALUE, {"guild": g_id, "author": u_id})
-        for row in self.cur:
-            if row is not None:
-                _records.append(record(*row))
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                SELECT_USER_GUILD_VALUE,
+                {
+                    sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
+                    sqliteFieldName.get(SQLFields.AUTHOR): u_id,
+                },
+            )
+            for row in cur:
+                if row is not None:
+                    _records.append(record(*row))
         return _records
 
+    @staticmethod
     def select_record_by_post_message(
-        self, m_id: discord.Message.id, g_id: discord.Guild.id
-    ) -> record:
+        m_id: discord.Message.id, g_id: discord.Guild.id
+    ) -> Optional[record]:
         _record = None
 
-        self.cur.execute(SELECT_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
-        _row = self.cur.fetchone()
-        if _row is not None:
-            _record = record(*_row)
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                SELECT_VALUE_BY_POST_MESSAGE,
+                {
+                    sqliteFieldName.get(SQLFields.POST_ID): m_id,
+                    sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
+                },
+            )
+            _row = cur.fetchone()
+            if _row is not None:
+                _record = record(*_row)
         return _record
 
-    def select_records_before_yesterday(self) -> list[record]:
+    @staticmethod
+    def select_records_before_yesterday() -> Optional[list[record]]:
         _records = []
 
-        self.cur.execute(SELECT_PAST_RECORDS)
-        for row in self.cur:
-            if row is not None:
-                _records.append(record(*row))
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(SELECT_PAST_RECORDS)
+            for row in cur:
+                if row is not None:
+                    _records.append(record(*row))
         return _records
 
     #######
 
-    def delete_record_by_post_message(
-        self, m_id: discord.Message.id, g_id: discord.Guild.id
-    ):
-        self.cur.execute(DELETE_VALUE_BY_POST_MESSAGE, {"ID": m_id, "guild": g_id})
-        self.conn.commit()
+    @staticmethod
+    def delete_record_by_post_message(m_id: discord.Message.id, g_id: discord.Guild.id):
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                DELETE_VALUE_BY_POST_MESSAGE,
+                {
+                    sqliteFieldName.get(SQLFields.POST_ID): m_id,
+                    sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
+                },
+            )
+            con.commit()
 
 
 #########################################
 # Sub Class
 #########################################
 class pinSQL(SQL):
-    app_name = "pin"
+    appName = AppNames.AUTO_PIN.value
 
-    #########################################
-    # DB操作Function
-    #########################################
+    @classmethod
+    def getHistory(
+        cls, conditions: list[SQLCondition]
+    ) -> Optional[Union[record, list[record]]]:
+        query = query_of_getHistory(conditions)
+        d = dict(conditions)
+
+        match query:
+            case Queries.SELECT_VALUE_BY_CUE_MESSAGE:
+                return cls.select_record_by_cue_message(
+                    g_id=d.get(SQLFields.GUILD_ID),
+                    m_id=d.get(SQLFields.CUE_ID),
+                )
+            case _:
+                return super().getHistory(conditions)
+
+    @staticmethod
     def select_record_by_cue_message(
-        self, m_id: discord.Message.id, g_id: discord.Guild.id
+        m_id: discord.Message.id, g_id: discord.Guild.id
     ) -> record:
         _record = None
 
-        self.cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-        _row = self.cur.fetchone()
-        if _row is not None:
-            _record = record(*_row)
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                SELECT_VALUE_BY_CUE_MESSAGE,
+                {
+                    sqliteFieldName.get(SQLFields.CUE_ID): m_id,
+                    sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
+                },
+            )
+            _row = cur.fetchone()
+            if _row is not None:
+                _record = record(*_row)
         return _record
-
-    def select_records_by_cue_message(
-        self, m_id: discord.Message.id, g_id: discord.Guild.id
-    ) -> list[record]:
-        _records = []
-
-        self.cur.execute(SELECT_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-        for row in self.cur:
-            if row is not None:
-                _records.append(record(*row))
-        return _records
-
-    def delete_record_by_cue_message(
-        self, m_id: discord.Message.id, g_id: discord.Guild.id
-    ):
-        self.cur.execute(DELETE_VALUE_BY_CUE_MESSAGE, {"ID": m_id, "guild": g_id})
-        self.conn.commit()
 
 
 class bunnySQL(SQL):
-    app_name = "bunny"
+    appName = AppNames.BUNNY_TIMER.value
 
-    #########################################
-    # DB操作Function
-    #########################################
-    def insert_record(self, post: discord.Message):
-        _record = record(
-            post.id,
-            None,
-            None,
-            post.created_at,
-            post.author.id,
-            post.guild.id,
-            self.app_name,
-        )
+    @classmethod
+    def getHistory(
+        cls, conditions: list[SQLCondition]
+    ) -> Optional[Union[record, list[record]]]:
+        query = query_of_getHistory(conditions)
+        d = dict(conditions)
 
-        self.cur.execute(INSERT_RECORDS, _record.row)
-        self.conn.commit()
+        match query:
+            case Queries.SELECT_GUILD_BUNNY_VALUES:
+                return cls.select_guild_bunny_records(g_id=d.get(SQLFields.GUILD_ID))
+            case _:
+                return super().getHistory(conditions)
 
-    def select_guild_bunny_records(self, g_id) -> list[record]:
+    @staticmethod
+    def select_guild_bunny_records(g_id: discord.Guild.id) -> list[record]:
         _records = []
 
-        self.cur.execute(SELECT_GUILD_BUNNY_VALUE, {"guild": g_id, "app_name": "bunny"})
+        with closing(sqlite3.connect(DB_NAME)) as con:
+            cur = con.cursor()
+            cur.execute(
+                SELECT_GUILD_BUNNY_VALUE,
+                {
+                    sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
+                    sqliteFieldName.get(SQLFields.APP_NAME): AppNames.BUNNY_TIMER.value,
+                },
+            )
 
-        for row in self.cur:
-            if row is not None:
-                _records.append(record(*row))
+            for row in cur:
+                if row is not None:
+                    _records.append(record(*row))
 
         return _records

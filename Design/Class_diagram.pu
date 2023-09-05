@@ -89,6 +89,7 @@ package Discord_IO{
     class Bot{
         ---
         + send()
+        + sendEmbeds()
         + edit()
         + delete()
     }
@@ -97,7 +98,7 @@ package Discord_IO{
 package Apps{
     class AutoPin{
         ---
-        + pin()
+        + pinToChannel()
         + unpin()
         + seal()
         + unseal()
@@ -119,9 +120,7 @@ package Apps{
 
 package SQL_IO{
     class SQL{
-        - app_name
-        - conn
-        - cur
+        - appName
         ---
         + init()
 
@@ -135,18 +134,26 @@ package SQL_IO{
         + delete_record_by_post_message()
     }
     class pinSQL{
-        - app_name
+        - appName
         ---
         + select_record_by_cue_message()
-        + select_records_by_cue_message()
-        + delete_record_by_cue_message()
     }
 
     class bunnySQL{
-        - app_name
+        - appName
         ---
         + insert_record()
         + select_guild_bunny_records()
+    }
+}
+
+package Core {
+    interface HistoryCtrl{
+        ---
+        - init()
+        - getHistory()
+        - setHistory()
+        - deleteHistory()
     }
 }
 
@@ -206,12 +213,14 @@ EventHandler    -->     BunnyTimer : call
 Bot             <--     AutoPin : use
 Bot             <--     BunnyTimer : use
 
-' relation btw. Apps and SQL_IO
-AutoPin         *--     pinSQL
-BunnyTimer      *--     bunnySQL
+' relation btw. Apps and HistoryCtrl
+AutoPin         -->     HistoryCtrl : use
+BunnyTimer      -->     HistoryCtrl : use
+
+' relation btw. HistoryCtrl and SQL_IO
+HistoryCtrl     <|..    SQL_IO
 
 ' relation btw. SQL_IO and database
-SQL             ->      History : set/get
-
+SQL_IO          -->     History : set/get
 
 @enduml

@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta
 import re
 
 ##
-import myLib.L2_SystemIO.sql as sql
+from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
 import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
 
@@ -20,6 +20,61 @@ intents.reactions = True
 intents.guilds = True
 client = commands.Bot(command_prefix=g.BOT_PREFIX, intents=intents)
 apps.setClient(client)
+
+# AutoPin アプリの起動
+autoPin = apps.AutoPin(pinSQL())
+
+
+class Bot:
+    def __init__(self) -> None:
+        pass
+
+    def __del__(self) -> None:
+        pass
+
+    async def send(
+        gID: discord.Guild.id, chID: discord.TextChannel.id, content: str
+    ) -> discord.Message:
+        global client
+        c = client
+        msg = await c.get_guild(gID).get_channel(chID).send(content=content)
+        return msg
+
+    async def sendEmbeds(
+        gID: discord.Guild.id,
+        chID: discord.TextChannel.id,
+        embeds: [discord.Embed],
+    ) -> discord.Message:
+        global client
+        c = client
+        msg = await c.get_guild(gID).get_channel(chID).send(embeds=embeds)
+        return msg
+
+    async def edit(target: discord.Message, embeds: [discord.Embed]):
+        await target.edit(embeds=embeds)
+
+    async def deleteMessage(
+        gID: discord.Guild.id,
+        chID: discord.TextChannel.id,
+        msgID: discord.Message.id,
+    ):
+        global client
+        c = client
+
+        try:
+            msg = await c.get_guild(gID).get_channel(chID).fetch_message(msgID)
+        except:
+            msg = None
+        if msg is not None:
+            await msg.delete()
+
+
+class EventHandler:
+    def __init__(self, client: commands.Bot) -> None:
+        self.client = client
+
+    def __del__(self) -> None:
+        pass
 
 
 # 起動時に動作する処理
@@ -74,18 +129,14 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
 @client.event
 async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     # 削除メッセージがBOTの場合の処理
-    _record = sql.pinSQL().select_record_by_post_message(
-        payload.message_id, payload.guild_id
-    )
+    _record = pinSQL.select_record_by_post_message(payload.message_id, payload.guild_id)
     if _record is not None:
         await apps.delete_post_by_record(_record, POST=False, DB=True)
     else:
         pass
 
     # 削除メッセージがCueの場合の処理
-    _record = sql.pinSQL().select_record_by_cue_message(
-        payload.message_id, payload.guild_id
-    )
+    _record = pinSQL.select_record_by_cue_message(payload.message_id, payload.guild_id)
     if _record is not None:
         await apps.delete_post_by_record(_record, POST=True, DB=True)
     else:
@@ -96,7 +147,7 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     ## ここから完了チェック
-    r = sql.pinSQL().select_record_by_cue_message(payload.message_id, payload.guild_id)
+    r = pinSQL.select_record_by_cue_message(payload.message_id, payload.guild_id)
     if r is not None:
         cue = await apps.get_message_by_record(r, isPost=False)
         if cue is not None:
@@ -110,7 +161,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await apps.get_message_by_payload(payload)
         if message.author == client.user and apps.isFirstReactionAdd(message):
-            r = sql.pinSQL().select_record_by_post_message(
+            r = pinSQL.select_record_by_post_message(
                 payload.message_id, g_id=payload.guild_id
             )
             if r is not None:
@@ -146,7 +197,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
         message = await apps.get_message_by_payload(payload)
         if message.author == client.user and apps.isNullReaction(message):
-            _r = sql.pinSQL().select_record_by_post_message(
+            _r = pinSQL.select_record_by_post_message(
                 m_id=message.id, g_id=message.guild.id
             )
             if _r is not None:
@@ -230,7 +281,7 @@ async def clean():
 
     if now.weekday() % 7 == g.CLEAN_DAY and g.CLEAN_ACTIVE:  # 決まった曜日のみ実行
         print("定期動作作動")
-        records = sql.SQL().select_records_before_yesterday()
+        records = SQL.select_records_before_yesterday()
         for r in records:
             message = await apps.get_message_by_record(r, isPost=True)
             if (message is not None) and (
@@ -272,7 +323,7 @@ async def usagi(ctx: commands.Context, seq: str):
 
 
 async def bunny_message_manage(ctx: commands.Context, dt_next: datetime, seq: str):
-    rs = sql.bunnySQL().select_guild_bunny_records(g_id=ctx.guild.id)
+    rs = bunnySQL.select_guild_bunny_records(g_id=ctx.guild.id)
     for r in rs:
         await apps.delete_post_by_record(r, POST=True, DB=True)
 
