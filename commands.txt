@@ -7,7 +7,10 @@ class diagram generate
 
 pip install pylint
 pyreverse -o png -p rose .\
-pip uninstall pylint
+pip freeze > uninstall.txt
+pip uninstall -y -r uninstall.txt
+pip install -r requirements.txt
+rm uninstall.txt
 
 ####################
 fly io
