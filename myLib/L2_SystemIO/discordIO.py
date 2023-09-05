@@ -8,6 +8,7 @@ from datetime import datetime, time, timedelta
 import re
 
 ##
+from myLib.L0_Core.botCtrl import BotCtrl
 from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
 import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
@@ -21,48 +22,46 @@ intents.guilds = True
 client = commands.Bot(command_prefix=g.BOT_PREFIX, intents=intents)
 apps.setClient(client)
 
-# AutoPin アプリの起動
-autoPin = apps.AutoPin(pinSQL())
 
+class Bot(BotCtrl):
+    client: commands.bot
 
-class Bot:
-    def __init__(self) -> None:
+    def __init__(self, client) -> None:
+        self.client = client
         pass
 
     def __del__(self) -> None:
         pass
 
     async def send(
-        gID: discord.Guild.id, chID: discord.TextChannel.id, content: str
+        self, gID: discord.Guild.id, chID: discord.TextChannel.id, content: str
     ) -> discord.Message:
-        global client
-        c = client
-        msg = await c.get_guild(gID).get_channel(chID).send(content=content)
+        msg = await self.client.get_guild(gID).get_channel(chID).send(content=content)
         return msg
 
     async def sendEmbeds(
+        self,
         gID: discord.Guild.id,
         chID: discord.TextChannel.id,
         embeds: [discord.Embed],
     ) -> discord.Message:
-        global client
-        c = client
-        msg = await c.get_guild(gID).get_channel(chID).send(embeds=embeds)
+        msg = await self.client.get_guild(gID).get_channel(chID).send(embeds=embeds)
         return msg
 
+    @staticmethod
     async def edit(target: discord.Message, embeds: [discord.Embed]):
         await target.edit(embeds=embeds)
 
     async def deleteMessage(
+        self,
         gID: discord.Guild.id,
         chID: discord.TextChannel.id,
         msgID: discord.Message.id,
     ):
-        global client
-        c = client
-
         try:
-            msg = await c.get_guild(gID).get_channel(chID).fetch_message(msgID)
+            msg = (
+                await self.client.get_guild(gID).get_channel(chID).fetch_message(msgID)
+            )
         except:
             msg = None
         if msg is not None:
@@ -75,6 +74,10 @@ class EventHandler:
 
     def __del__(self) -> None:
         pass
+
+
+# AutoPin アプリのインスタンス化
+autoPin = apps.AutoPin(pinSQL(), Bot(client=client))
 
 
 # 起動時に動作する処理
@@ -110,7 +113,7 @@ async def message_listener(message: discord.Message):
     if message.author.bot:
         return
     else:
-        await apps.check_and_activate(message)
+        await autoPin.check_and_activate(message)
     return
 
 
@@ -121,7 +124,7 @@ async def on_raw_message_edit(payload: discord.RawMessageUpdateEvent):
     if message.author.bot:
         return
     else:
-        await apps.check_and_activate(message)
+        await autoPin.check_and_activate(message)
     return
 
 
@@ -168,7 +171,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 cue = await apps.get_message_by_record(r=r, isPost=False)
                 message = await apps.get_message_by_payload(payload)
                 if message.author == client.user and apps.isFirstReactionAdd(message):
-                    await apps.update_post(target=message, base=cue, isActive=False)
+                    await autoPin.seal(target=message, base=cue, isSeal=True)
                     return
     return
 
@@ -189,7 +192,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
             and (payload.user_id == message.author.id)
             and await apps.isNoUserCheckReactions(message, payload.user_id)
         ):
-            await apps.check_and_activate(message)
+            await autoPin.check_and_activate(message)
 
     ## ここから黒塗りチェック
     if (
@@ -202,7 +205,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
             )
             if _r is not None:
                 cue = await apps.get_message_by_record(_r, isPost=False)
-                await apps.update_post(target=message, base=cue, isActive=True)
+                await autoPin.seal(target=message, base=cue, isSeal=False)
 
 
 # クリアコマンド

@@ -11,21 +11,6 @@
 #   ・ウサギさん来る時間のリスト化
 #   ・ウサギさんタイマー表示用チャンネル別に分ける?
 #
-# DONE
-#   ・BOTのメッセージ全削除コマンドを追加する
-#   ・BOTのメッセージが削除されたときにDBから削除する
-#   ・キーワードが削除されたときにPOSTを消す
-#   ・元メッセージが削除された場合POSTを消す
-#   ・ファイルを分割する
-#   ・ホストにデプロイする
-#   ・途中から参加／抜けるサーバに対応
-#   ・！clearコマンドは、それ以外を含まない投稿のみとする。
-#   ・！clear_allコマンドは、管理者と特定の権限（メッセージ削除）を持つ人のみ実行可能にする。
-#   ・！clearコマンドは、実行者の自分のポストのみを削除
-#   ・Error回避のtry except を作る。
-#   ・一定時間が経過したPOSTは自動で削除する。（毎週火曜朝4時）
-#   ・Bot書き込み用Chを作るようマニュアルに書く
-#   ・## for TEST ##をクリーンする
 
 from myLib.L2_SystemIO.sql import SQL
 import myLib.L2_SystemIO.discordIO as d_IO
@@ -33,7 +18,7 @@ import myLib.L2_SystemIO.discordIO as d_IO
 #########################################
 DEBUG_MODE = "Earnest_dev"
 # DEBUG_MODE = "Rose_dev"
-# DEBUG_MODE = "Deploy"
+DEBUG_MODE = "Deploy"
 
 # DBの初期接続
 SQL.init()

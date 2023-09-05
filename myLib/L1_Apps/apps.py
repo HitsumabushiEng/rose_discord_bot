@@ -1,5 +1,4 @@
 from typing import Union, Optional
-from enum import Enum
 
 ##
 import discord
@@ -10,9 +9,9 @@ from datetime import datetime
 ##
 from myLib.L0_Core.historyCtrl import record, HistoryCtrl
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
+from myLib.L0_Core.botCtrl import BotCtrl
 
 from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
-import myLib.L2_SystemIO.discordIO as disco
 
 import myLib.L1_Apps.setting as g
 
@@ -21,8 +20,9 @@ import myLib.L1_Apps.setting as g
 # Apps
 #########################################
 class AutoPin:
-    def __init__(self, sqlIO: HistoryCtrl) -> None:
+    def __init__(self, sqlIO: HistoryCtrl, botIO: BotCtrl) -> None:
         self.sqlIO = sqlIO
+        self.botIO = botIO
 
     def __del__(self) -> None:
         pass
@@ -30,35 +30,115 @@ class AutoPin:
     async def pinToChannel(self, cue: discord.Message):
         gID = cue.guild.id
         chID = g.guild_channel_map[gID]
-        embeds = await gen_embed_from_message(cue, isActive=True)
+        embeds = await self.gen_embed_from_message(cue, isActive=True)
 
         try:
-            msg = await disco.Bot.sendEmbeds(gID=gID, chID=chID, embeds=embeds)
+            msg = await self.botIO.sendEmbeds(gID=gID, chID=chID, embeds=embeds)
             self.sqlIO.setHistory(post=msg, cue=cue)
         except:
-            print(g.ERROR_MESSAGE.format("pinToChannel()"))
+            print(g.ERROR_MESSAGE.format(self.pinToChannel.__name__))
 
     async def unpin(self, record: record):
         gID = record.guildID
         msgID = record.postID
         chID = g.guild_channel_map[gID]
 
-        await disco.Bot.deleteMessage(gID=gID, chID=chID, msgID=msgID)
+        await self.botIO.deleteMessage(gID=gID, chID=chID, msgID=msgID)
 
         conditions = []
         conditions.append(SQLCondition(SQLFields.POST_ID, msgID))
         conditions.append(SQLCondition(SQLFields.GUILD_ID, gID))
         self.sqlIO.deleteHistory(conditions=conditions)
 
-    @staticmethod
-    async def seal(target: discord.Message, base: discord.Message, isSeal: bool):
+    async def seal(self, target: discord.Message, base: discord.Message, isSeal: bool):
         _es = []
-        es = await gen_embed_from_message(base, isActive=(not isSeal))
+        es = await self.gen_embed_from_message(base, isActive=(not isSeal))
         _es.extend(es)
         try:
-            await disco.Bot.edit(target=target, embeds=_es)
+            await self.botIO.edit(target=target, embeds=_es)
         except:
-            print(g.ERROR_MESSAGE.format("seal()"))
+            print(g.ERROR_MESSAGE.format(self.seal.__name__))
+
+    async def gen_embed_from_message(
+        self, message: discord.Message, isActive: bool
+    ) -> [discord.Embed]:
+        _es = []
+        _e = discord.Embed()
+        _g = await self.botIO.client.fetch_guild(message.guild.id)
+        _m = await _g.fetch_member(message.author.id)
+        _n = _m.display_name
+        _l = g.MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
+        _l = g.INACTIVE_MARKUP_SYMBOLS + _l + g.INACTIVE_MARKUP_SYMBOLS
+
+        _c = message.content
+        for s in g.KEYWORDS_PIN:
+            _c = _c.replace(s, "")
+
+        if isActive:
+            _e.color = g.ACTIVE_COLOR
+        else:
+            _e.color = g.INACTIVE_COLOR
+            if _c:  # 空文字の場合は|| || で囲わない。
+                _c = g.INACTIVE_MARKUP_SYMBOLS + _c + g.INACTIVE_MARKUP_SYMBOLS
+
+        _e.set_author(name=_n, icon_url=_m.display_avatar.url)
+        _e.add_field(name=_l, value=_c)
+
+        _es.append(_e)
+        _as = message.attachments
+
+        if isActive:
+            isFirst = True
+            for a in _as:
+                if "image" in a.content_type:
+                    _e = discord.Embed()
+                    _e.set_image(url=a.url)
+                    _es.append(_e)
+                elif isFirst:
+                    _e = discord.Embed(description=g.INFO_ATTACHED_FILE, url=a.url)
+                    _es.append(_e)
+                    isFirst = False
+        else:
+            pass
+
+        return _es
+
+    async def check_and_activate(self, _cue: discord.Message):
+        # チェックのリアクションがついている場合、何もしない。
+        if not await isNoUserCheckReactions(_cue, _cue.author.id):
+            return
+
+        # 投稿済みレコードの検索
+        _record = pinSQL.select_record_by_cue_message(_cue.id, _cue.guild.id)
+
+        if _record is None:  # DBに書き込み元メッセージの情報がない場合
+            if any((s in _cue.content) for s in g.KEYWORDS_PIN):
+                await self.pinToChannel(_cue)
+            else:
+                pass
+
+        else:  # DBに書き込み元メッセージの情報がある場合
+            c_id = g.guild_channel_map[_record.guildID]
+            m_id = _record.postID
+
+            try:
+                post = await self.botIO.client.get_channel(c_id).fetch_message(m_id)
+            except:  # Bot停止中にPostが削除されており、404 Not found.
+                post = None
+
+            if any((s in _cue.content) for s in g.KEYWORDS_PIN):
+                match post:
+                    case None:
+                        await self.pinToChannel(_cue)
+                    case case if isNullReaction(case):
+                        await self.seal(target=post, base=_cue, isSeal=False)
+                    case _:
+                        await self.seal(target=post, base=_cue, isSeal=True)
+
+            else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
+                await self.unpin(_record)
+
+        return
 
 
 ################################################
@@ -93,42 +173,6 @@ def erase_guild_ch(_gid: discord.Guild.id):
 
 
 # メッセージが投稿・編集された時の処理
-async def check_and_activate(_cue: discord.Message):
-    # チェックのリアクションがついている場合、何もしない。
-    if not await isNoUserCheckReactions(_cue, _cue.author.id):
-        return
-
-    # 投稿済みレコードの検索
-    _record = pinSQL.select_record_by_cue_message(_cue.id, _cue.guild.id)
-
-    if _record is None:  # DBに書き込み元メッセージの情報がない場合
-        if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-            await AutoPin(pinSQL()).pinToChannel(_cue)
-        else:
-            pass
-
-    else:  # DBに書き込み元メッセージの情報がある場合
-        c_id = g.guild_channel_map[_record.guildID]
-        m_id = _record.postID
-
-        try:
-            post = await client.get_channel(c_id).fetch_message(m_id)
-        except:  # Bot停止中にPostが削除されており、404 Not found.
-            post = None
-
-        if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-            match post:
-                case None:
-                    await AutoPin(pinSQL()).pinToChannel(_cue)
-                case case if isNullReaction(case):
-                    await AutoPin(pinSQL()).seal(target=post, base=_cue, isSeal=False)
-                case _:
-                    await AutoPin(pinSQL()).seal(target=post, base=_cue, isSeal=True)
-
-        else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            await AutoPin(pinSQL()).unpin(_record)
-
-    return
 
 
 # イベントペイロードからメッセージを取得
@@ -168,67 +212,6 @@ async def get_message_by_record(
         message = None
 
     return message
-
-
-# InactiveになったポストのActivate
-async def update_post(
-    target: discord.Message,
-    base: discord.Message,
-    isActive: bool = True,
-):
-    _es = []
-
-    es = await gen_embed_from_message(base, isActive=isActive)
-    _es.extend(es)
-    try:
-        await target.edit(embeds=_es)
-    except:
-        print(g.ERROR_MESSAGE.format("update_post()"))
-
-
-async def gen_embed_from_message(
-    message: discord.Message, isActive: bool
-) -> [discord.Embed]:
-    _es = []
-    _e = discord.Embed()
-    _g = await client.fetch_guild(message.guild.id)
-    _m = await _g.fetch_member(message.author.id)
-    _n = _m.display_name
-    _l = g.MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
-    _l = g.INACTIVE_MARKUP_SYMBOLS + _l + g.INACTIVE_MARKUP_SYMBOLS
-
-    _c = message.content
-    for s in g.KEYWORDS_PIN:
-        _c = _c.replace(s, "")
-
-    if isActive:
-        _e.color = g.ACTIVE_COLOR
-    else:
-        _e.color = g.INACTIVE_COLOR
-        if _c:  # 空文字の場合は|| || で囲わない。
-            _c = g.INACTIVE_MARKUP_SYMBOLS + _c + g.INACTIVE_MARKUP_SYMBOLS
-
-    _e.set_author(name=_n, icon_url=_m.display_avatar.url)
-    _e.add_field(name=_l, value=_c)
-
-    _es.append(_e)
-    _as = message.attachments
-
-    if isActive:
-        isFirst = True
-        for a in _as:
-            if "image" in a.content_type:
-                _e = discord.Embed()
-                _e.set_image(url=a.url)
-                _es.append(_e)
-            elif isFirst:
-                _e = discord.Embed(description=g.INFO_ATTACHED_FILE, url=a.url)
-                _es.append(_e)
-                isFirst = False
-    else:
-        pass
-
-    return _es
 
 
 # Reactionチェック
