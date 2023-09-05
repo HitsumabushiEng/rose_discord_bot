@@ -263,7 +263,7 @@ async def clear_all(ctx: commands.Context):
 async def usagi(ctx: commands.Context):
     if "stop" in ctx.message.content:
         await bunny_message_manage(ctx, datetime.now(), "suspend")
-        usagi.stop()
+        usagi.cancel()
 
     else:
         t_str = re.search(
@@ -345,7 +345,7 @@ async def usagi(ctx: commands.Context, seq: str):
             usagi.restart(ctx, "on_bunny")
 
         case _:
-            usagi.stop()
+            usagi.cancel()
             print(ERROR_MESSAGE.format("うさぎタイマー"))
 
 
