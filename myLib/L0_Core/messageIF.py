@@ -32,7 +32,7 @@ class MessageIF(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def get_message_by_record(
+    async def getMessage_ByRecord(
         self, r: record, isPost: bool = True
     ) -> Optional[discord.Message]:
         pass

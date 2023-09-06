@@ -61,7 +61,7 @@ package Discord_OUT{
         + sendMessage()
         + editMessage()
         + deleteMessage()
-        + get_message_by_record()
+        + getMessage_ByRecord()
     }
 }
 
@@ -106,9 +106,19 @@ package DiscordEventHandler{
 }
 
 package Apps{
+    class myApp{
+        - HistoryIF
+        - MessageIF
+        ---
+        - deleteHistory_ByRecord()
+        - deleteMessage_History_ByRecord()
+    }
+
     class AdminApp{
         ---
+        + register_all_guilds()
         + register_guild()
+        + clear_guild_all_post()
     }
 
     class AutoPinApp{
@@ -117,6 +127,8 @@ package Apps{
         + unpin()
         + seal()
         + unseal()
+        + clear_user_guild_post()
+        - gen_embed_from_message()
     }
 
     class BunnyTimerApp{
@@ -169,7 +181,7 @@ interface MessageIF{
     + sendMessage()
     + editMessage()
     + deleteMessage()
-    + get_message_by_record()
+    + getMessage_ByRecord()
 }
 
 interface HistoryIF{
@@ -178,6 +190,7 @@ interface HistoryIF{
     + getHistory()
     + setHistory()
     + deleteHistory()
+    + deleteHistory_ByRecord()
 }
 
 package History <<database>>{
@@ -217,7 +230,9 @@ DiscordEventListener     <|--    BunnyTimerEventHandler
 
 
 ' relation in package Apps
-
+myApp           <|--    AdminApp
+myApp           <|-    AutoPinApp
+myApp           <|-    BunnyTimerApp
 
 ' relation in package SQL_IO
 SQL            <|-     pinSQL
@@ -245,16 +260,12 @@ SQL_IO          -->     History : set/get
 ''''''''''''''''''''''''''''
 ' HistoryIF
 HistoryIF       <|..    SQL
-AdminApp        -->     HistoryIF : use
-AutoPinApp      -->     HistoryIF : use
-BunnyTimerApp   -->     HistoryIF : use
+myApp           -->     HistoryIF : use
 
 ' MessageIF
 BotMixin        ..|>    MessageIF
 
-MessageIF       <--     AdminApp : use
-MessageIF       <--     AutoPinApp : use
-MessageIF       <--     BunnyTimerApp : use
+MessageIF       <--     myApp : use
 
 
 @enduml

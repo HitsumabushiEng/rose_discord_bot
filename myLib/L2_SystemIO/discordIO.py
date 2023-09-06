@@ -69,7 +69,7 @@ class BotMixin(MessageIF):
         if msg is not None:
             await msg.delete()
 
-    async def get_message_by_record(
+    async def getMessage_ByRecord(
         self, r: record, isPost: bool = True
     ) -> Optional[discord.Message]:
         g_id = r.guildID
@@ -83,9 +83,7 @@ class BotMixin(MessageIF):
 
         try:
             message = (
-                await self.botIO.client.get_guild(g_id)
-                .get_channel(ch_id)
-                .fetch_message(m_id)
+                await self.client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
             )
         except:
             message = None
@@ -118,19 +116,19 @@ class AdminEventHandler(DiscordEventHandler):
 
     # ギルドに追加 / 削除時に反応
     @commands.Cog.listener()
-    async def on_guild_join(self, guild: discord.guild):
+    async def on_guild_join(self, guild: discord.Guild):
         self.app.register_guild(guild)
 
     @commands.Cog.listener()
-    async def on_guild_remove(self, guild: discord.guild):
-        await apps.clear_guild_all_post(guild.id)
-        erase_guild_ch(guild.id)
+    async def on_guild_remove(self, guild: discord.Guild):
+        await self.app.clearGuildAllMessage_History(g_id=guild.id)
+        self.app.deregister_guild(guild.id)
 
     @commands.command()
     @commands.has_permissions(manage_messages=True)
     async def clear_all(self, ctx: commands.Context):
         if ctx.message.content == g.BOT_PREFIX + "clear_all":  # コマンドだけに限定。
-            await apps.clear_guild_all_post(ctx.guild.id)
+            await self.app.clearGuildAllMessage_History(ctx.guild.id)
             msg = await ctx.send("--- all posts cleared ---")
             await asyncio.sleep(g.COMMAND_FB_TIME)
             await msg.delete()
@@ -140,6 +138,10 @@ class AdminEventHandler(DiscordEventHandler):
 
 
 class AutoPinEventHandler(DiscordEventHandler):
+    def __init__(self, bot: commands.Bot, app: apps.AutoPinApp):
+        self.client = bot
+        self.app = app
+
     # 起動時に動作する処理
     @commands.Cog.listener()
     async def on_ready(self):
@@ -172,7 +174,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             payload.message_id, payload.guild_id
         )
         if _record is not None:
-            await apps.delete_post_by_record(_record, POST=False, DB=True)
+            await self.app.sqlIO.deleteHistory_ByRecord(record=_record)
         else:
             pass
 
@@ -181,7 +183,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             payload.message_id, payload.guild_id
         )
         if _record is not None:
-            await apps.delete_post_by_record(_record, POST=True, DB=True)
+            await self.app.__deleteMessage_History_ByRecord(record=_record)
         else:
             pass
 
@@ -191,12 +193,12 @@ class AutoPinEventHandler(DiscordEventHandler):
         ## ここから完了チェック
         r = pinSQL.select_record_by_cue_message(payload.message_id, payload.guild_id)
         if r is not None:
-            cue = await self.app.botIO.get_message_by_record(r, isPost=False)
+            cue = await self.app.botIO.getMessage_ByRecord(r, isPost=False)
             if cue is not None:
                 if (payload.emoji in g.EMOJI_CHECK) and (
                     payload.user_id == cue.author.id
                 ):
-                    await apps.delete_post_by_record(r=r, POST=True, DB=True)
+                    await self.app.__deleteMessage_History_ByRecord(record=r)
                     return
 
         ## ここから黒塗りチェック
@@ -209,7 +211,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                     payload.message_id, g_id=payload.guild_id
                 )
                 if r is not None:
-                    cue = await self.app.botIO.get_message_by_record(r=r, isPost=False)
+                    cue = await self.app.botIO.getMessage_ByRecord(r=r, isPost=False)
                     message = await apps.get_message_by_payload(payload)
                     if message.author == self.client.user and isFirstReactionAdd(
                         message
@@ -246,7 +248,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                     m_id=message.id, g_id=message.guild.id
                 )
                 if _r is not None:
-                    cue = await self.app.botIO.get_message_by_record(_r, isPost=False)
+                    cue = await self.app.botIO.getMessage_ByRecord(_r, isPost=False)
                     await autoPin.seal(target=message, base=cue, isSeal=False)
 
     # クリアコマンド
@@ -273,22 +275,26 @@ class AutoPinEventHandler(DiscordEventHandler):
             print("定期動作作動")
             records = SQL.select_records_before_yesterday()
             for r in records:
-                message = await self.app.botIO.get_message_by_record(r, isPost=True)
+                message = await self.app.botIO.getMessage_ByRecord(r, isPost=True)
                 if (message is not None) and (
                     not isNullReaction(message)
                 ):  # Reactionが0じゃなかったら
-                    await apps.delete_post_by_record(r, POST=True, DB=True)
+                    await self.app.__deleteMessage_History_ByRecord(record=r)
                     print("削除 : ", r)
         else:
             pass
 
 
 class BunnyTimerEventHandler(DiscordEventHandler):
+    def __init__(self, bot: commands.Bot, app: apps.BunnyTimerApp):
+        self.client = bot
+        self.app = app
+
     # ウサギさんタイマーコマンド
     @commands.command()
     async def usagi(self, ctx: commands.Context):
         if "stop" in ctx.message.content:
-            await bunny_message_manage(ctx, datetime.now(), "suspend")
+            await self.bunny_message_manage(ctx, datetime.now(), "suspend")
             self.usagi_loop.cancel()
 
         else:
@@ -334,7 +340,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
                 # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=1)
                 next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=g.ZONE)
 
-                await bunny_message_manage(ctx, dt_next, seq)
+                await self.bunny_message_manage(ctx, dt_next, seq)
 
                 self.usagi_loop.change_interval(time=next)
                 self.usagi_loop.restart(ctx, "interval")
@@ -344,7 +350,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
                 # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=2)
                 next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=g.ZONE)
 
-                await bunny_message_manage(ctx, dt_next, seq)
+                await self.bunny_message_manage(ctx, dt_next, seq)
 
                 self.usagi_loop.change_interval(time=next)
                 self.usagi_loop.restart(ctx, "on_bunny")
@@ -352,6 +358,24 @@ class BunnyTimerEventHandler(DiscordEventHandler):
             case _:
                 self.usagi_loop.cancel()
                 print(g.ERROR_MESSAGE.format("うさぎタイマー"))
+
+    async def bunny_message_manage(
+        self, ctx: commands.Context, dt_next: datetime, seq: str
+    ):
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, ctx.guild.id))
+        conditions.append(SQLCondition(SQLFields.APP_NAME, self.app.sqlIO.appName))
+
+        rs = self.app.sqlIO.getHistory(conditions=conditions)
+
+        for r in rs:
+            await self.app.__deleteMessage_History_ByRecord(record=r)
+
+        now = datetime.now(tz=g.ZONE)
+        if 7 <= now.hour and now.hour <= 23:
+            await self.app.post_bunny(ctx.guild.id, dt_next, seq)
+        else:
+            await self.app.post_bunny(ctx.guild.id, dt_next, seq="suspend")
 
 
 ################TEMP###############
@@ -373,18 +397,6 @@ def setClient(c: commands.Bot):
 #########################################
 # Local Functions
 #########################################
-
-
-async def bunny_message_manage(ctx: commands.Context, dt_next: datetime, seq: str):
-    rs = bunnySQL.select_guild_bunny_records(g_id=ctx.guild.id)
-    for r in rs:
-        await apps.delete_post_by_record(r, POST=True, DB=True)
-
-    now = datetime.now(tz=g.ZONE)
-    if 7 <= now.hour and now.hour <= 23:
-        await apps.post_bunny(ctx.guild.id, dt_next, seq)
-    else:
-        await apps.post_bunny(ctx.guild.id, dt_next, seq="suspend")
 
 
 async def check_and_activate(_cue: discord.Message):
@@ -446,7 +458,3 @@ def isNullReaction(message) -> bool:
 
 def isFirstReactionAdd(message) -> bool:
     return len(message.reactions) == 1 and message.reactions[0].count == 1
-
-
-def erase_guild_ch(_gid: discord.Guild.id):
-    del g.guild_channel_map[_gid]

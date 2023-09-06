@@ -27,6 +27,15 @@ class myApp:
     def __del__(self) -> None:
         pass
 
+    async def __deleteMessage_History_ByRecord(self, record: record):
+        msg = await self.botIO.getMessage_ByRecord(record, isPost=True)
+        if msg is not None:
+            await self.botIO.deleteMessage(msg=msg)
+        self.sqlIO.deleteHistory_ByRecord(record=record)
+
+    async def __deleteHistory_ByRecord(self, record: record):
+        return self.sqlIO.deleteHistory_ByRecord(record=record)
+
 
 class AdminApp(myApp):
     @classmethod
@@ -43,15 +52,19 @@ class AdminApp(myApp):
                 ## guild id -> channel を紐づけ
                 g.guild_channel_map[_g.id] = c.id
 
-    async def clear_guild_all_post(self, g_id):
+    @staticmethod
+    def deregister_guild(_gid: discord.Guild.id):
+        del g.guild_channel_map[_gid]
+
+    async def clearGuildAllMessage_History(self, g_id):
         conditions = []
         conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
         records = self.sqlIO.getHistory(conditions=conditions)
 
         for r in records:
-            msg = await self.botIO.get_message_by_record(r=r, isPost=True)
+            msg = await self.botIO.getMessage_ByRecord(r=r, isPost=True)
             await self.botIO.deleteMessage(msg=msg)
-            self.sqlIO.delete_History_By_Record(record=r)
+            self.sqlIO.deleteHistory_ByRecord(record=r)
 
 
 class AutoPinApp(myApp):
@@ -68,7 +81,7 @@ class AutoPinApp(myApp):
 
     async def unpin(self, record: record, msg: discord.Message):
         await self.botIO.deleteMessage(msg=msg)
-        self.sqlIO.delete_History_By_Record(record=record)
+        self.sqlIO.deleteHistory_ByRecord(record=record)
 
     async def seal(self, target: discord.Message, base: discord.Message, isSeal: bool):
         _es = []
@@ -79,6 +92,18 @@ class AutoPinApp(myApp):
         except:
             print(g.ERROR_MESSAGE.format(self.seal.__name__))
 
+    # Clear own posts
+    async def clear_user_guild_post(self, g_id, u_id):
+        conditions = []
+        conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
+        conditions.append(SQLCondition(field=SQLFields.AUTHOR, condition=u_id))
+        records = self.sqlIO.getHistory(conditions=conditions)
+
+        if records is not None:
+            for r in records:
+                self.__deleteMessage_History_ByRecord(record=r)
+
+    # Private methods
     async def __gen_embed_from_message(
         self, message: discord.Message, isActive: bool
     ) -> [discord.Embed]:
@@ -143,6 +168,25 @@ class BunnyTimerApp(myApp):
     async def inform_bunny():
         pass
 
+    async def post_bunny(self, g_id: discord.Guild.id, dt_next: datetime, seq: str):
+        chID = g.guild_channel_map[g_id]
+
+        match seq:
+            case "interval":
+                content = g.INFO_NEXT_BUNNY.format(
+                    dt_next.strftime(g.BUNNY_TIME_FORMAT)
+                )
+            case "on_bunny":
+                content = g.INFO_BUNNY_NOW
+            case "suspend":
+                content = None
+            case _:
+                content = None
+
+        if content is not None:
+            msg = await self.botIO.sendMessage(gID=g_id, chID=chID, content=content)
+            bunnySQL.insert_record(post=msg, cue=None)
+
 
 ################################################
 # ここから下を削除する
@@ -203,44 +247,17 @@ async def get_message_by_record(
     return message
 
 
-########### for うさぎさん
-async def post_bunny(g_id: discord.Guild.id, dt_next: datetime, seq: str):
-    match seq:
-        case "interval":
-            msg = await client.get_channel(g.guild_channel_map[g_id]).send(
-                g.INFO_NEXT_BUNNY.format(dt_next.strftime("%H時%M分"))
-            )
-        case "on_bunny":
-            msg = await client.get_channel(g.guild_channel_map[g_id]).send(
-                g.INFO_BUNNY_NOW
-            )
-
-        case "suspend":
-            msg = None
-        case _:
-            msg = None
-
-    if msg is not None:
-        bunnySQL.insert_record(post=msg, cue=None)
-
-
 ########### Clear
 
-
+"""
 # Clear all posts
 async def clear_guild_all_post(g_id):
     records = SQL.select_guild_all_records(g_id)
     for r in records:
         await delete_post_by_record(r, POST=True, DB=True)
+"""
 
-
-# Clear own posts
-async def clear_user_guild_post(g_id, u_id):
-    records = SQL.select_user_guild_records(g_id, u_id)
-    for r in records:
-        await delete_post_by_record(r, POST=True, DB=True)
-
-
+"""
 async def delete_post_by_record(r: record, POST=False, DB=False):
     if POST:
         message = await get_message_by_record(r, isPost=True)
@@ -248,3 +265,4 @@ async def delete_post_by_record(r: record, POST=False, DB=False):
             await message.delete()
     if DB:
         SQL.delete_record_by_post_message(m_id=r.postID, g_id=r.guildID)
+"""

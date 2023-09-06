@@ -206,7 +206,7 @@ class SQL(HistoryIF):
         )
 
     @classmethod
-    def delete_History_By_Record(cls, record: record):
+    def deleteHistory_ByRecord(cls, record: record):
         return cls.delete_record_by_post_message(
             m_id=record.postID, g_id=record.guildID
         )
@@ -380,12 +380,12 @@ class bunnySQL(SQL):
 
         match query:
             case Queries.SELECT_GUILD_BUNNY_VALUES:
-                return cls.select_guild_bunny_records(g_id=d.get(SQLFields.GUILD_ID))
+                return cls.__select_guild_bunny_records(g_id=d.get(SQLFields.GUILD_ID))
             case _:
                 return super().getHistory(conditions)
 
     @classmethod
-    def select_guild_bunny_records(cls, g_id: discord.Guild.id) -> list[record]:
+    def __select_guild_bunny_records(cls, g_id: discord.Guild.id) -> list[record]:
         _records = []
 
         with closing(sqlite3.connect(DB_NAME)) as con:
