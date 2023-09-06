@@ -9,7 +9,7 @@ from myLib.L0_Core.dataTypes import record, SQLCondition
 #########################################
 # Data controller interface
 #########################################
-class HistoryCtrl(metaclass=ABCMeta):
+class HistoryIF(metaclass=ABCMeta):
     @staticmethod
     @abstractmethod
     def init():
@@ -30,4 +30,9 @@ class HistoryCtrl(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def deleteHistory(cls, conditions: list[SQLCondition]):
+        pass
+
+    @classmethod
+    @abstractmethod
+    def delete_History_By_Record(cls, record: record):
         pass

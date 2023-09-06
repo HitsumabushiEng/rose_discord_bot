@@ -1,4 +1,4 @@
-from typing import Union, Optional
+from typing import Union, Optional, Sequence
 
 ##
 import discord
@@ -7,9 +7,9 @@ from discord.ext import commands
 from datetime import datetime
 
 ##
-from myLib.L0_Core.historyCtrl import record, HistoryCtrl
+from myLib.L0_Core.historyIF import record, HistoryIF
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
-from myLib.L0_Core.botCtrl import BotCtrl
+from myLib.L0_Core.messageIF import MessageIF
 
 from myLib.L2_SystemIO.sql import SQL, bunnySQL
 
@@ -19,47 +19,67 @@ import myLib.L1_Apps.setting as g
 #########################################
 # Apps
 #########################################
-class AutoPin:
-    def __init__(self, sqlIO: HistoryCtrl, botIO: BotCtrl) -> None:
+class myApp:
+    def __init__(self, sqlIO: HistoryIF, botIO: MessageIF) -> None:
         self.sqlIO = sqlIO
         self.botIO = botIO
 
     def __del__(self) -> None:
         pass
 
+
+class AdminApp(myApp):
+    @classmethod
+    def register_all_guilds(cls, _guilds: Sequence[discord.Guild]):
+        # 参加している各ギルドの書き込み対象chを取得、保持
+        if _guilds is not None:
+            for g in _guilds:
+                cls.register_guild(g)
+
+    @staticmethod
+    def register_guild(_g: discord.Guild):
+        for c in _g.channels:
+            if c.name == g.CHANNEL:
+                ## guild id -> channel を紐づけ
+                g.guild_channel_map[_g.id] = c.id
+
+    async def clear_guild_all_post(self, g_id):
+        conditions = []
+        conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
+        records = self.sqlIO.getHistory(conditions=conditions)
+
+        for r in records:
+            msg = await self.botIO.get_message_by_record(r=r, isPost=True)
+            await self.botIO.deleteMessage(msg=msg)
+            self.sqlIO.delete_History_By_Record(record=r)
+
+
+class AutoPinApp(myApp):
     async def pinToChannel(self, cue: discord.Message):
         gID = cue.guild.id
         chID = g.guild_channel_map[gID]
-        embeds = await self.gen_embed_from_message(cue, isActive=True)
+        embeds = await self.__gen_embed_from_message(cue, isActive=True)
 
         try:
-            msg = await self.botIO.sendEmbeds(gID=gID, chID=chID, embeds=embeds)
+            msg = await self.botIO.sendMessage(gID=gID, chID=chID, content=embeds)
             self.sqlIO.setHistory(post=msg, cue=cue)
         except:
             print(g.ERROR_MESSAGE.format(self.pinToChannel.__name__))
 
-    async def unpin(self, record: record):
-        gID = record.guildID
-        msgID = record.postID
-        chID = g.guild_channel_map[gID]
-
-        await self.botIO.deleteMessage(gID=gID, chID=chID, msgID=msgID)
-
-        conditions = []
-        conditions.append(SQLCondition(SQLFields.POST_ID, msgID))
-        conditions.append(SQLCondition(SQLFields.GUILD_ID, gID))
-        self.sqlIO.deleteHistory(conditions=conditions)
+    async def unpin(self, record: record, msg: discord.Message):
+        await self.botIO.deleteMessage(msg=msg)
+        self.sqlIO.delete_History_By_Record(record=record)
 
     async def seal(self, target: discord.Message, base: discord.Message, isSeal: bool):
         _es = []
-        es = await self.gen_embed_from_message(base, isActive=(not isSeal))
+        es = await self.__gen_embed_from_message(base, isActive=(not isSeal))
         _es.extend(es)
         try:
-            await self.botIO.edit(target=target, embeds=_es)
+            await self.botIO.editMessage(target=target, embeds=_es)
         except:
             print(g.ERROR_MESSAGE.format(self.seal.__name__))
 
-    async def gen_embed_from_message(
+    async def __gen_embed_from_message(
         self, message: discord.Message, isActive: bool
     ) -> [discord.Embed]:
         _es = []
@@ -104,15 +124,23 @@ class AutoPin:
         return _es
 
 
-class BunnyTimer:
-    def __init__(self, sqlIO: HistoryCtrl, botIO: BotCtrl) -> None:
-        self.sqlIO = sqlIO
-        self.botIO = botIO
-
-    def __del__(self) -> None:
+class BunnyTimerApp(myApp):
+    async def set_bunny():
         pass
 
-    async def set_bunny():
+    async def reset_bunny():
+        pass
+
+    async def catch_bunny():
+        pass
+
+    async def end_bunny():
+        pass
+
+    async def inform_next():
+        pass
+
+    async def inform_bunny():
         pass
 
 

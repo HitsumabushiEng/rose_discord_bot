@@ -16,8 +16,12 @@ import os
 import discord
 from discord.ext import commands
 
-from myLib.L2_SystemIO.sql import SQL
+from myLib.L2_SystemIO.discordIO import BotMixin
 import myLib.L2_SystemIO.discordIO as cogs
+
+import myLib.L1_Apps.apps as apps
+
+from myLib.L2_SystemIO.sql import SQL, pinSQL, bunnySQL
 import myLib.L1_Apps.setting as g
 
 #########################################
@@ -53,13 +57,21 @@ client = commands.Bot(command_prefix=g.BOT_PREFIX, intents=intents)
 cogs.setClient(client)
 ################TEMP###############
 
+# クライアントを使ってBotMixinをインスタンス化
+bot = BotMixin(client=client)
+
+# BotMixinを使ってアプリをインスタンス化
+adminApp = apps.AdminApp(sqlIO=SQL(), botIO=bot)
+autoPinApp = apps.AutoPinApp(sqlIO=pinSQL(), botIO=bot)
+bunnyApp = apps.BunnyTimerApp(sqlIO=bunnySQL(), botIO=bot)
+
 
 # イベントリスナーの登録
 @client.event
 async def setup_hook():
-    await client.add_cog(cogs.GeneralCog(client))
-    await client.add_cog(cogs.AutoPinCog(client))
-    await client.add_cog(cogs.BunnyTimerCog(client))
+    await client.add_cog(cogs.AdminEventHandler(client, adminApp))
+    await client.add_cog(cogs.AutoPinEventHandler(client, autoPinApp))
+    await client.add_cog(cogs.BunnyTimerEventHandler(client, bunnyApp))
 
 
 # クライアント起動

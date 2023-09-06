@@ -1,4 +1,5 @@
 import asyncio
+from typing import Union, Optional
 
 ##
 import discord
@@ -9,34 +10,116 @@ import re
 from discord.guild import Guild
 
 ##
-from myLib.L0_Core.botCtrl import BotCtrl
-from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
+from myLib.L0_Core.messageIF import MessageIF
+from myLib.L0_Core.dataTypes import SQLCondition, SQLFields, record
 
 from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
 import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
 
 
-class GeneralCog(commands.Cog):
-    def __init__(self, bot):
+class BotMixin(MessageIF):
+    client: commands.Bot
+
+    def __init__(self, client: commands.Bot) -> None:
+        self.client = client
+        pass
+
+    def __del__(self) -> None:
+        pass
+
+    async def sendMessage(
+        self,
+        gID: discord.Guild.id,
+        chID: discord.TextChannel.id,
+        content: Union[str, discord.Embed, list[discord.Embed]],
+    ) -> discord.Message:
+        match type(content):
+            case x if x is str:
+                return (
+                    await self.client.get_guild(gID)
+                    .get_channel(chID)
+                    .send(content=content)
+                )
+            case x if x is discord.Embed:
+                return (
+                    await self.client.get_guild(gID)
+                    .get_channel(chID)
+                    .send(embed=content)
+                )
+            case x if x is list:
+                return (
+                    await self.client.get_guild(gID)
+                    .get_channel(chID)
+                    .send(embeds=content)
+                )
+            case _:
+                return (
+                    await self.client.get_guild(gID)
+                    .get_channel(chID)
+                    .send(content=content)
+                )
+
+    @staticmethod
+    async def editMessage(target: discord.Message, embeds: [discord.Embed]):
+        await target.edit(embeds=embeds)
+
+    @staticmethod
+    async def deleteMessage(msg: discord.Message):
+        if msg is not None:
+            await msg.delete()
+
+    async def get_message_by_record(
+        self, r: record, isPost: bool = True
+    ) -> Optional[discord.Message]:
+        g_id = r.guildID
+
+        if isPost:
+            ch_id = g.guild_channel_map[g_id]
+            m_id = r.postID
+        else:
+            ch_id = r.cueChID
+            m_id = r.cueID
+
+        try:
+            message = (
+                await self.botIO.client.get_guild(g_id)
+                .get_channel(ch_id)
+                .fetch_message(m_id)
+            )
+        except:
+            message = None
+
+        return message
+
+
+#########################################
+# Cog super class
+#########################################
+class DiscordEventHandler(commands.Cog):
+    def __init__(self, bot: commands.Bot, app: apps.myApp):
         self.client = bot
+        self.app = app
+
+
+#########################################
+# Cog class
+#########################################
+class AdminEventHandler(DiscordEventHandler):
+    def __init__(self, bot: commands.Bot, app: apps.AdminApp):
+        self.client = bot
+        self.app = app
 
     # 起動時に動作する処理
     @commands.Cog.listener()
     async def on_ready(self):
-        # 参加している各ギルドの書き込み対象chを取得、保持
-        guilds = self.client.guilds
-
-        if guilds is not None:
-            for g in guilds:
-                register_guild_ch(g)
-
+        self.app.register_all_guilds(self.client.guilds)
         print("Test Bot logged in")
 
-    # クライアントに追加 / 削除時に反応
+    # ギルドに追加 / 削除時に反応
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.guild):
-        register_guild_ch(guild)
+        self.app.register_guild(guild)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.guild):
@@ -56,10 +139,7 @@ class GeneralCog(commands.Cog):
             pass
 
 
-class AutoPinCog(commands.Cog):
-    def __init__(self, bot):
-        self.client = bot
-
+class AutoPinEventHandler(DiscordEventHandler):
     # 起動時に動作する処理
     @commands.Cog.listener()
     async def on_ready(self):
@@ -111,7 +191,7 @@ class AutoPinCog(commands.Cog):
         ## ここから完了チェック
         r = pinSQL.select_record_by_cue_message(payload.message_id, payload.guild_id)
         if r is not None:
-            cue = await apps.get_message_by_record(r, isPost=False)
+            cue = await self.app.botIO.get_message_by_record(r, isPost=False)
             if cue is not None:
                 if (payload.emoji in g.EMOJI_CHECK) and (
                     payload.user_id == cue.author.id
@@ -129,7 +209,7 @@ class AutoPinCog(commands.Cog):
                     payload.message_id, g_id=payload.guild_id
                 )
                 if r is not None:
-                    cue = await apps.get_message_by_record(r=r, isPost=False)
+                    cue = await self.app.botIO.get_message_by_record(r=r, isPost=False)
                     message = await apps.get_message_by_payload(payload)
                     if message.author == self.client.user and isFirstReactionAdd(
                         message
@@ -166,7 +246,7 @@ class AutoPinCog(commands.Cog):
                     m_id=message.id, g_id=message.guild.id
                 )
                 if _r is not None:
-                    cue = await apps.get_message_by_record(_r, isPost=False)
+                    cue = await self.app.botIO.get_message_by_record(_r, isPost=False)
                     await autoPin.seal(target=message, base=cue, isSeal=False)
 
     # クリアコマンド
@@ -193,7 +273,7 @@ class AutoPinCog(commands.Cog):
             print("定期動作作動")
             records = SQL.select_records_before_yesterday()
             for r in records:
-                message = await apps.get_message_by_record(r, isPost=True)
+                message = await self.app.botIO.get_message_by_record(r, isPost=True)
                 if (message is not None) and (
                     not isNullReaction(message)
                 ):  # Reactionが0じゃなかったら
@@ -203,10 +283,7 @@ class AutoPinCog(commands.Cog):
             pass
 
 
-class BunnyTimerCog(commands.Cog):
-    def __init__(self, bot):
-        self.client = bot
-
+class BunnyTimerEventHandler(DiscordEventHandler):
     # ウサギさんタイマーコマンド
     @commands.command()
     async def usagi(self, ctx: commands.Context):
@@ -277,52 +354,9 @@ class BunnyTimerCog(commands.Cog):
                 print(g.ERROR_MESSAGE.format("うさぎタイマー"))
 
 
-class myBot(BotCtrl):
-    client: commands.Bot
-
-    def __init__(self, client: commands.Bot) -> None:
-        self.client = client
-        pass
-
-    def __del__(self) -> None:
-        pass
-
-    async def send(
-        self, gID: discord.Guild.id, chID: discord.TextChannel.id, content: str
-    ) -> discord.Message:
-        return await self.client.get_guild(gID).get_channel(chID).send(content=content)
-
-    async def sendEmbeds(
-        self,
-        gID: discord.Guild.id,
-        chID: discord.TextChannel.id,
-        embeds: [discord.Embed],
-    ) -> discord.Message:
-        return await self.client.get_guild(gID).get_channel(chID).send(embeds=embeds)
-
-    @staticmethod
-    async def edit(target: discord.Message, embeds: [discord.Embed]):
-        await target.edit(embeds=embeds)
-
-    async def deleteMessage(
-        self,
-        gID: discord.Guild.id,
-        chID: discord.TextChannel.id,
-        msgID: discord.Message.id,
-    ):
-        try:
-            msg = (
-                await self.client.get_guild(gID).get_channel(chID).fetch_message(msgID)
-            )
-        except:
-            msg = None
-        if msg is not None:
-            await msg.delete()
-
-
 ################TEMP###############
 client: commands.Bot
-autoPin: apps.AutoPin
+autoPin: apps.AutoPinApp
 
 
 def setClient(c: commands.Bot):
@@ -330,7 +364,7 @@ def setClient(c: commands.Bot):
     global autoPin
     client = c
     apps.setClient(client)
-    autoPin = apps.AutoPin(pinSQL(), myBot(client=client))
+    autoPin = apps.AutoPinApp(pinSQL(), BotMixin(client=client))
 
 
 ################TEMP###############
@@ -389,7 +423,7 @@ async def check_and_activate(_cue: discord.Message):
                     await autoPin.seal(target=post, base=_cue, isSeal=True)
 
         else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            await autoPin.unpin(_record)
+            await autoPin.unpin(record=_record, msg=post)
 
     return
 
@@ -412,13 +446,6 @@ def isNullReaction(message) -> bool:
 
 def isFirstReactionAdd(message) -> bool:
     return len(message.reactions) == 1 and message.reactions[0].count == 1
-
-
-def register_guild_ch(_g: discord.Guild):
-    for c in _g.channels:
-        if c.name == g.CHANNEL:
-            ## guild id -> channel を紐づけ
-            g.guild_channel_map[_g.id] = c.id
 
 
 def erase_guild_ch(_gid: discord.Guild.id):

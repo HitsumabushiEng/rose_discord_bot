@@ -169,5 +169,5 @@ cython_debug/
 out/Design/*
 
 # ignore Sourcetrail files
-Rose_discord_bot.srctrl*
+*.srctrl*
 

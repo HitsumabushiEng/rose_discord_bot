@@ -1,0 +1,38 @@
+from abc import ABCMeta, abstractmethod
+from typing import Union, Optional
+
+import discord
+from discord.ext import commands
+from myLib.L0_Core.dataTypes import record
+
+
+#########################################
+# Data controller interface
+#########################################
+class MessageIF(metaclass=ABCMeta):
+    client: commands.Bot
+
+    @abstractmethod
+    def sendMessage(
+        self,
+        gID: discord.Guild.id,
+        chID: discord.TextChannel.id,
+        content: Union[str, discord.Embed, list[discord.Embed]],
+    ) -> discord.Message:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    async def editMessage(target: discord.Message, embeds: [discord.Embed]):
+        pass
+
+    @staticmethod
+    @abstractmethod
+    async def deleteMessage(msg: discord.Message):
+        pass
+
+    @abstractmethod
+    async def get_message_by_record(
+        self, r: record, isPost: bool = True
+    ) -> Optional[discord.Message]:
+        pass

@@ -23,7 +23,7 @@ from contextlib import closing
 from typing import Union, Optional
 from enum import Enum, auto
 
-from myLib.L0_Core.historyCtrl import HistoryCtrl
+from myLib.L0_Core.historyIF import HistoryIF
 from myLib.L0_Core.dataTypes import record, SQLCondition, SQLFields
 
 #########################################
@@ -139,7 +139,7 @@ def query_of_getHistory(conditions: list[SQLCondition]) -> Optional[Queries]:
 #########################################
 # Super Class
 #########################################
-class SQL(HistoryCtrl):
+class SQL(HistoryIF):
     appName = "default"
 
     def __init__(self) -> None:
@@ -203,6 +203,12 @@ class SQL(HistoryCtrl):
         d = dict(conditions)
         return cls.delete_record_by_post_message(
             m_id=d.get(SQLFields.POST_ID), g_id=d.get(SQLFields.GUILD_ID)
+        )
+
+    @classmethod
+    def delete_History_By_Record(cls, record: record):
+        return cls.delete_record_by_post_message(
+            m_id=record.postID, g_id=record.guildID
         )
 
     #########################################
@@ -378,8 +384,8 @@ class bunnySQL(SQL):
             case _:
                 return super().getHistory(conditions)
 
-    @staticmethod
-    def select_guild_bunny_records(g_id: discord.Guild.id) -> list[record]:
+    @classmethod
+    def select_guild_bunny_records(cls, g_id: discord.Guild.id) -> list[record]:
         _records = []
 
         with closing(sqlite3.connect(DB_NAME)) as con:
@@ -388,7 +394,7 @@ class bunnySQL(SQL):
                 SELECT_GUILD_BUNNY_VALUE,
                 {
                     sqliteFieldName.get(SQLFields.GUILD_ID): g_id,
-                    sqliteFieldName.get(SQLFields.APP_NAME): AppNames.BUNNY_TIMER.value,
+                    sqliteFieldName.get(SQLFields.APP_NAME): cls.appName,
                 },
             )
 
