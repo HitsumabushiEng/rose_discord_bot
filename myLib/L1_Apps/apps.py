@@ -27,7 +27,7 @@ class myApp:
     def __del__(self) -> None:
         pass
 
-    async def __deleteMessage_History_ByRecord(self, record: record):
+    async def deleteMessage_History_ByRecord(self, record: record):
         msg = await self.botIO.getMessage_ByRecord(record, isPost=True)
         if msg is not None:
             await self.botIO.deleteMessage(msg=msg)
@@ -83,7 +83,9 @@ class AutoPinApp(myApp):
         await self.botIO.deleteMessage(msg=msg)
         self.sqlIO.deleteHistory_ByRecord(record=record)
 
-    async def seal(self, target: discord.Message, base: discord.Message, isSeal: bool):
+    async def seal(
+        self, target: discord.Message, base: discord.Message, isSeal: bool = True
+    ):
         _es = []
         es = await self.__gen_embed_from_message(base, isActive=(not isSeal))
         _es.extend(es)
@@ -91,6 +93,9 @@ class AutoPinApp(myApp):
             await self.botIO.editMessage(target=target, embeds=_es)
         except:
             print(g.ERROR_MESSAGE.format(self.seal.__name__))
+
+    async def unseal(self, target: discord.Message, base: discord.Message):
+        await self.seal(target=target, base=base, isSeal=False)
 
     # Clear own posts
     async def clear_user_guild_post(self, g_id, u_id):
@@ -101,7 +106,7 @@ class AutoPinApp(myApp):
 
         if records is not None:
             for r in records:
-                self.__deleteMessage_History_ByRecord(record=r)
+                self.deleteMessage_History_ByRecord(record=r)
 
     # Private methods
     async def __gen_embed_from_message(

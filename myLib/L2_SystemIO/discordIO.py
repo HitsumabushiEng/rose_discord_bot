@@ -1,5 +1,6 @@
 import asyncio
 from typing import Union, Optional
+from enum import Enum, auto
 
 ##
 import discord
@@ -131,8 +132,8 @@ class AdminEventHandler(DiscordEventHandler):
             await self.app.clearGuildAllMessage_History(ctx.guild.id)
             msg = await ctx.send("--- all posts cleared ---")
             await asyncio.sleep(g.COMMAND_FB_TIME)
-            await msg.delete()
             await ctx.message.delete()
+            await msg.delete()
         else:
             pass
 
@@ -153,7 +154,7 @@ class AutoPinEventHandler(DiscordEventHandler):
         if message.author.bot:
             return
         else:
-            await check_and_activate(message)
+            await self.message_event_handler(message)
         return
 
     # メッセージ編集時に動作する処理
@@ -163,8 +164,12 @@ class AutoPinEventHandler(DiscordEventHandler):
         if message.author.bot:
             return
         else:
-            await check_and_activate(message)
+            await self.message_event_handler(message)
         return
+
+    ###############################################
+    ##############ここからやる######################
+    ###############################################
 
     # メッセージが削除された場合に反応
     @commands.Cog.listener()
@@ -174,7 +179,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             payload.message_id, payload.guild_id
         )
         if _record is not None:
-            await self.app.sqlIO.deleteHistory_ByRecord(record=_record)
+            self.app.sqlIO.deleteHistory_ByRecord(record=_record)
         else:
             pass
 
@@ -183,7 +188,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             payload.message_id, payload.guild_id
         )
         if _record is not None:
-            await self.app.__deleteMessage_History_ByRecord(record=_record)
+            await self.app.deleteMessage_History_ByRecord(record=_record)
         else:
             pass
 
@@ -198,7 +203,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                 if (payload.emoji in g.EMOJI_CHECK) and (
                     payload.user_id == cue.author.id
                 ):
-                    await self.app.__deleteMessage_History_ByRecord(record=r)
+                    await self.app.deleteMessage_History_ByRecord(record=r)
                     return
 
         ## ここから黒塗りチェック
@@ -216,7 +221,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                     if message.author == self.client.user and isFirstReactionAdd(
                         message
                     ):
-                        await autoPin.seal(target=message, base=cue, isSeal=True)
+                        await autoPin.seal(target=message, base=cue)
                         return
         return
 
@@ -236,7 +241,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                 and (payload.user_id == message.author.id)
                 and await isNoUserCheckReactions(message, payload.user_id)
             ):
-                await check_and_activate(message)
+                await self.message_event_handler(message)
 
         ## ここから黒塗りチェック
         if (
@@ -249,7 +254,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                 )
                 if _r is not None:
                     cue = await self.app.botIO.getMessage_ByRecord(_r, isPost=False)
-                    await autoPin.seal(target=message, base=cue, isSeal=False)
+                    await autoPin.unseal(target=message, base=cue)
 
     # クリアコマンド
     @commands.command()
@@ -279,10 +284,53 @@ class AutoPinEventHandler(DiscordEventHandler):
                 if (message is not None) and (
                     not isNullReaction(message)
                 ):  # Reactionが0じゃなかったら
-                    await self.app.__deleteMessage_History_ByRecord(record=r)
+                    await self.app.deleteMessage_History_ByRecord(record=r)
                     print("削除 : ", r)
         else:
             pass
+
+    async def message_event_handler(self, _cue: discord.Message):
+        #
+        # See decision table and flow chart bellow
+        # Design\AutoPin_Decision_table.md
+        #
+        # 投稿済みレコードの検索
+
+        if _cue.author.bot:
+            return
+
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.CUE_ID, _cue.id))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, _cue.guild.id))
+        _record = pinSQL().getHistory(conditions=conditions)
+
+        if _record is not None:
+            post = await self.app.botIO.getMessage_ByRecord(_record)
+
+        if not (any((s in _cue.content) for s in g.KEYWORDS_PIN)):
+            if _record is not None:  # UNPIN
+                await self.app.unpin(_record, post)
+                return
+            else:
+                return
+
+        if await isUserCheckReactions(_cue, _cue.author.id):
+            if _record is not None:  # UNPIN
+                await self.app.unpin(_record, post)
+                return
+            else:
+                return
+
+        if _record is not None:
+            if isNullReaction(post):  # UNSEAL
+                await self.app.unseal(target=post, base=_cue)
+                return
+            else:  # SEAL
+                await self.app.seal(target=post, base=_cue)
+                return
+
+        await self.app.pinToChannel(_cue)  # pin to Channel
+        return
 
 
 class BunnyTimerEventHandler(DiscordEventHandler):
@@ -369,7 +417,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
         rs = self.app.sqlIO.getHistory(conditions=conditions)
 
         for r in rs:
-            await self.app.__deleteMessage_History_ByRecord(record=r)
+            await self.app.deleteMessage_History_ByRecord(record=r)
 
         now = datetime.now(tz=g.ZONE)
         if 7 <= now.hour and now.hour <= 23:
@@ -399,56 +447,19 @@ def setClient(c: commands.Bot):
 #########################################
 
 
-async def check_and_activate(_cue: discord.Message):
-    # チェックのリアクションがついている場合、何もしない。
-    if not await isNoUserCheckReactions(_cue, _cue.author.id):
-        return
-
-    # 投稿済みレコードの検索
-    conditions = []
-    conditions.append(SQLCondition(SQLFields.CUE_ID, _cue.id))
-    conditions.append(SQLCondition(SQLFields.GUILD_ID, _cue.guild.id))
-    _record = pinSQL().getHistory(conditions=conditions)
-
-    if _record is None:  # DBに書き込み元メッセージの情報がない場合
-        if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-            await autoPin.pinToChannel(_cue)
-        else:
-            pass
-
-    else:  # DBに書き込み元メッセージの情報がある場合
-        c_id = g.guild_channel_map[_record.guildID]
-        m_id = _record.postID
-
-        try:
-            post = await autoPin.botIO.client.get_channel(c_id).fetch_message(m_id)
-        except:  # Bot停止中にPostが削除されており、404 Not found.
-            post = None
-
-        if any((s in _cue.content) for s in g.KEYWORDS_PIN):
-            match post:
-                case None:
-                    await autoPin.pinToChannel(_cue)
-                case case if isNullReaction(case):
-                    await autoPin.seal(target=post, base=_cue, isSeal=False)
-                case _:
-                    await autoPin.seal(target=post, base=_cue, isSeal=True)
-
-        else:  # キーワードが消えてたら、ポストを消し、レコードも消す。
-            await autoPin.unpin(record=_record, msg=post)
-
-    return
+async def isUserCheckReactions(message: discord.Message, user: discord.User.id) -> bool:
+    for r in message.reactions:
+        reaction_users = [u.id async for u in r.users()]
+        if any((s in r.emoji) for s in g.KEYWORDS_CHECK):
+            if user in reaction_users:
+                return True
+    return False
 
 
 async def isNoUserCheckReactions(
     message: discord.Message, user: discord.User.id
 ) -> bool:
-    for r in message.reactions:
-        reaction_users = [u.id async for u in r.users()]
-        if any((s in r.emoji) for s in g.KEYWORDS_CHECK):
-            if user in reaction_users:
-                return False
-    return True
+    return not await isUserCheckReactions(message=message, user=user)
 
 
 # Reactionチェック
