@@ -21,20 +21,20 @@ import myLib.L1_Apps.setting as g
 #########################################
 class myApp:
     def __init__(self, sqlIO: HistoryIF, botIO: MessageIF) -> None:
-        self.sqlIO = sqlIO
-        self.botIO = botIO
+        self._sqlIO = sqlIO
+        self._botIO = botIO
 
     def __del__(self) -> None:
         pass
 
-    async def deleteMessage_History_ByRecord(self, record: record):
-        msg = await self.botIO.getMessage_ByRecord(record, isPost=True)
+    async def _deleteMessage_History_ByRecord(self, record: record):
+        msg = await self._botIO.getMessage_ByRecord(record, isPost=True)
         if msg is not None:
-            await self.botIO.deleteMessage(msg=msg)
-        self.sqlIO.deleteHistory_ByRecord(record=record)
+            await self._botIO.deleteMessage(msg=msg)
+        self._sqlIO.deleteHistory_ByRecord(record=record)
 
-    async def __deleteHistory_ByRecord(self, record: record):
-        return self.sqlIO.deleteHistory_ByRecord(record=record)
+    def deleteHistory_ByRecord(self, record: record):
+        return self._sqlIO.deleteHistory_ByRecord(record=record)
 
 
 class AdminApp(myApp):
@@ -59,38 +59,44 @@ class AdminApp(myApp):
     async def clearGuildAllMessage_History(self, g_id):
         conditions = []
         conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
-        records = self.sqlIO.getHistory(conditions=conditions)
+        records = self._sqlIO.getHistory(conditions=conditions)
 
         for r in records:
-            msg = await self.botIO.getMessage_ByRecord(r=r, isPost=True)
-            await self.botIO.deleteMessage(msg=msg)
-            self.sqlIO.deleteHistory_ByRecord(record=r)
+            msg = await self._botIO.getMessage_ByRecord(r=r, isPost=True)
+            await self._botIO.deleteMessage(msg=msg)
+            self._sqlIO.deleteHistory_ByRecord(record=r)
 
 
 class AutoPinApp(myApp):
     async def pinToChannel(self, cue: discord.Message):
         gID = cue.guild.id
         chID = g.guild_channel_map[gID]
-        embeds = await self.__gen_embed_from_message(cue, isActive=True)
+        embeds = await self._gen_embed_from_message(cue, isActive=True)
 
         try:
-            msg = await self.botIO.sendMessage(gID=gID, chID=chID, content=embeds)
-            self.sqlIO.setHistory(post=msg, cue=cue)
+            msg = await self._botIO.sendMessage(gID=gID, chID=chID, content=embeds)
+            self._sqlIO.setHistory(post=msg, cue=cue)
         except:
             print(g.ERROR_MESSAGE.format(self.pinToChannel.__name__))
 
     async def unpin(self, record: record, msg: discord.Message):
-        await self.botIO.deleteMessage(msg=msg)
-        self.sqlIO.deleteHistory_ByRecord(record=record)
+        await self._botIO.deleteMessage(msg=msg)
+        self._sqlIO.deleteHistory_ByRecord(record=record)
+
+    async def unpin_ByRecord(self, record: record):
+        msg = await self._botIO.getMessage_ByRecord(record, isPost=True)
+        if msg is not None:
+            await self._botIO.deleteMessage(msg=msg)
+        self._sqlIO.deleteHistory_ByRecord(record=record)
 
     async def seal(
         self, target: discord.Message, base: discord.Message, isSeal: bool = True
     ):
         _es = []
-        es = await self.__gen_embed_from_message(base, isActive=(not isSeal))
+        es = await self._gen_embed_from_message(base, isActive=(not isSeal))
         _es.extend(es)
         try:
-            await self.botIO.editMessage(target=target, embeds=_es)
+            await self._botIO.editMessage(target=target, embeds=_es)
         except:
             print(g.ERROR_MESSAGE.format(self.seal.__name__))
 
@@ -102,19 +108,19 @@ class AutoPinApp(myApp):
         conditions = []
         conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
         conditions.append(SQLCondition(field=SQLFields.AUTHOR, condition=u_id))
-        records = self.sqlIO.getHistory(conditions=conditions)
+        records = self._sqlIO.getHistory(conditions=conditions)
 
         if records is not None:
             for r in records:
-                self.deleteMessage_History_ByRecord(record=r)
+                await self._deleteMessage_History_ByRecord(record=r)
 
     # Private methods
-    async def __gen_embed_from_message(
+    async def _gen_embed_from_message(
         self, message: discord.Message, isActive: bool
     ) -> [discord.Embed]:
         _es = []
         _e = discord.Embed()
-        _g = await self.botIO.client.fetch_guild(message.guild.id)
+        _g = await self._botIO.client.fetch_guild(message.guild.id)
         _m = await _g.fetch_member(message.author.id)
         _n = _m.display_name
         _l = g.MESSAGE_LINK.format(message.guild.id, message.channel.id, message.id)
@@ -189,7 +195,7 @@ class BunnyTimerApp(myApp):
                 content = None
 
         if content is not None:
-            msg = await self.botIO.sendMessage(gID=g_id, chID=chID, content=content)
+            msg = await self._botIO.sendMessage(gID=g_id, chID=chID, content=content)
             bunnySQL.insert_record(post=msg, cue=None)
 
 
