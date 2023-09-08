@@ -95,6 +95,7 @@ package DiscordEventHandler{
 
         + command.clear()
         + tasks.loop.clean()
+        - __message_event_handler
     }
     class BunnyTimerEventHandler{
         - client
@@ -110,8 +111,8 @@ package Apps{
         - HistoryIF
         - MessageIF
         ---
-        - deleteHistory_ByRecord()
-        - deleteMessage_History_ByRecord()
+        + deleteMessage_History_ByRecord()
+        + deleteHistory_ByRecord()
     }
 
     class AdminApp{
@@ -125,6 +126,7 @@ package Apps{
         ---
         + pinToChannel()
         + unpin()
+        + unpin_ByRecord()
         + seal()
         + unseal()
         + clear_user_guild_post()
@@ -165,6 +167,7 @@ package SQL_IO{
         ---
         + getHistory()
         - select_record_by_cue_message()
+        - select_record_by_any_message()
     }
 
     class bunnySQL{

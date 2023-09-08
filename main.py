@@ -11,6 +11,7 @@
 #   ・ウサギさん来る時間のリスト化
 #   ・ウサギさんタイマー表示用チャンネル別に分ける?
 #
+#   ・SQLのSELECT文にAppNameを足す
 
 import os
 import discord
