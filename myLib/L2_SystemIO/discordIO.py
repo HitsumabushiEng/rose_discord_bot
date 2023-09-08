@@ -137,6 +137,21 @@ class AdminEventHandler(DiscordEventHandler):
         else:
             pass
 
+    # BOTメッセージが削除された場合に反応
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
+        _record = self.app._sqlIO.getHistory(conditions=conditions)
+
+        if _record is not None:
+            match payload.message_id:
+                case _record.postID:  # 削除メッセージがPOSTの場合の処理
+                    self.app.deleteHistory_ByRecord(record=_record)
+                case _:
+                    pass
+
 
 class AutoPinEventHandler(DiscordEventHandler):
     def __init__(self, bot: commands.Bot, app: apps.AutoPinApp):
@@ -147,83 +162,81 @@ class AutoPinEventHandler(DiscordEventHandler):
     @commands.Cog.listener()
     async def on_ready(self):
         self.clean.start()  # 定期Loopの開始
+        return
 
     # メッセージ受信時に動作する処理
     @commands.Cog.listener("on_message")
     async def message_listener(self, message: discord.Message):
-        if message.author.bot:
-            return
-        else:
-            await self.message_event_handler(message)
+        await self._message_event_handler(message)
         return
 
     # メッセージ編集時に動作する処理
     @commands.Cog.listener()
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
         message = await apps.get_message_by_payload(payload)
-        if message.author.bot:
-            return
-        else:
-            await self.message_event_handler(message)
+        await self._message_event_handler(message)
         return
-
-    ###############################################
-    ##############ここからやる######################
-    ###############################################
 
     # メッセージが削除された場合に反応
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
-        # 削除メッセージがBOTの場合の処理
-        _record = pinSQL.select_record_by_post_message(
-            payload.message_id, payload.guild_id
-        )
-        if _record is not None:
-            self.app.sqlIO.deleteHistory_ByRecord(record=_record)
-        else:
-            pass
+        # POSTはAdmin クラスで処理。
+        # CUEに対応
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.CUE_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
+        _record = self.app._sqlIO.getHistory(conditions=conditions)
 
-        # 削除メッセージがCueの場合の処理
-        _record = pinSQL.select_record_by_cue_message(
-            payload.message_id, payload.guild_id
-        )
-        if _record is not None:
-            await self.app.deleteMessage_History_ByRecord(record=_record)
-        else:
-            pass
+        if _record is not None:  # UNPIN後はレコードも消されているためNone
+            match payload.message_id:
+                case _record.cueID:  # 削除メッセージがCUEの場合の処理
+                    await self.app.unpin_ByRecord(record=_record)
+                case _:
+                    pass
 
     # リアクション追加に対して反応
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        ## ここから完了チェック
-        r = pinSQL.select_record_by_cue_message(payload.message_id, payload.guild_id)
-        if r is not None:
-            cue = await self.app.botIO.getMessage_ByRecord(r, isPost=False)
-            if cue is not None:
-                if (payload.emoji in g.EMOJI_CHECK) and (
-                    payload.user_id == cue.author.id
-                ):
-                    await self.app.deleteMessage_History_ByRecord(record=r)
-                    return
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
+        conditions.append(SQLCondition(SQLFields.CUE_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
+        record = self.app._sqlIO.getHistory(conditions=conditions)
 
-        ## ここから黒塗りチェック
-        elif (
-            payload.channel_id == g.guild_channel_map[payload.guild_id]
-        ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
-            message = await apps.get_message_by_payload(payload)
-            if message.author == self.client.user and isFirstReactionAdd(message):
-                r = pinSQL.select_record_by_post_message(
-                    payload.message_id, g_id=payload.guild_id
-                )
-                if r is not None:
-                    cue = await self.app.botIO.getMessage_ByRecord(r=r, isPost=False)
-                    message = await apps.get_message_by_payload(payload)
-                    if message.author == self.client.user and isFirstReactionAdd(
-                        message
+        match record:
+            case None:
+                return
+            case x if x.postID == payload.message_id:
+                post = await self.app._botIO.getMessage_ByRecord(r=record)
+                if (
+                    isFirstReactionAdd(post)
+                    and record.appName == self.app._sqlIO.appName
+                ):
+                    cue = await self.app._botIO.getMessage_ByRecord(
+                        r=record, isPost=False
+                    )
+                    await self.app.seal(target=post, base=cue)
+                    return
+                else:
+                    return
+            case x if x.cueID == payload.message_id:
+                cue = await self.app._botIO.getMessage_ByRecord(r=record, isPost=False)
+                if cue is not None:
+                    if (payload.emoji in g.EMOJI_CHECK) and (
+                        payload.user_id == cue.author.id
                     ):
-                        await autoPin.seal(target=message, base=cue)
+                        await self.app.unpin_ByRecord(record=record)
                         return
-        return
+                    else:
+                        return
+                else:
+                    return
+            case _:
+                return
+
+    ###############################################
+    ##############ここからやる######################
+    ###############################################
 
     # リアクション削除に対して反応
     @commands.Cog.listener()
@@ -241,7 +254,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                 and (payload.user_id == message.author.id)
                 and await isNoUserCheckReactions(message, payload.user_id)
             ):
-                await self.message_event_handler(message)
+                await self._message_event_handler(message)
 
         ## ここから黒塗りチェック
         if (
@@ -253,14 +266,22 @@ class AutoPinEventHandler(DiscordEventHandler):
                     m_id=message.id, g_id=message.guild.id
                 )
                 if _r is not None:
-                    cue = await self.app.botIO.getMessage_ByRecord(_r, isPost=False)
+                    cue = await self.app._botIO.getMessage_ByRecord(_r, isPost=False)
                     await autoPin.unseal(target=message, base=cue)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_clear(self, payload):
+        print("on_raw_reaction_clear")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_clear_emoji(self, payload):
+        print("on_raw_reaction_clear_emoji")
 
     # クリアコマンド
     @commands.command()
     async def clear(self, ctx: commands.Context):
         if ctx.message.content == g.BOT_PREFIX + "clear":  # コマンドだけに限定。
-            await apps.clear_user_guild_post(ctx.guild.id, ctx.author.id)
+            await self.app.clear_user_guild_post(ctx.guild.id, ctx.author.id)
             msg = await ctx.send("--- your posts cleared ---")
             await asyncio.sleep(g.COMMAND_FB_TIME)
             await msg.delete()
@@ -280,16 +301,16 @@ class AutoPinEventHandler(DiscordEventHandler):
             print("定期動作作動")
             records = SQL.select_records_before_yesterday()
             for r in records:
-                message = await self.app.botIO.getMessage_ByRecord(r, isPost=True)
+                message = await self.app._botIO.getMessage_ByRecord(r, isPost=True)
                 if (message is not None) and (
                     not isNullReaction(message)
                 ):  # Reactionが0じゃなかったら
-                    await self.app.deleteMessage_History_ByRecord(record=r)
+                    await self.app._deleteMessage_History_ByRecord(record=r)
                     print("削除 : ", r)
         else:
             pass
 
-    async def message_event_handler(self, _cue: discord.Message):
+    async def _message_event_handler(self, _cue: discord.Message):
         #
         # See decision table and flow chart bellow
         # Design\AutoPin_Decision_table.md
@@ -305,7 +326,7 @@ class AutoPinEventHandler(DiscordEventHandler):
         _record = pinSQL().getHistory(conditions=conditions)
 
         if _record is not None:
-            post = await self.app.botIO.getMessage_ByRecord(_record)
+            post = await self.app._botIO.getMessage_ByRecord(_record)
 
         if not (any((s in _cue.content) for s in g.KEYWORDS_PIN)):
             if _record is not None:  # UNPIN
@@ -359,7 +380,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
 
                 self.usagi_loop.change_interval(time=next)
 
-                await apps.post_bunny(ctx.guild.id, dt_next, seq="interval")
+                await self.app.post_bunny(ctx.guild.id, dt_next, seq="interval")
 
                 try:
                     self.usagi_loop.start(ctx, "on_bunny")
@@ -412,12 +433,12 @@ class BunnyTimerEventHandler(DiscordEventHandler):
     ):
         conditions = []
         conditions.append(SQLCondition(SQLFields.GUILD_ID, ctx.guild.id))
-        conditions.append(SQLCondition(SQLFields.APP_NAME, self.app.sqlIO.appName))
+        conditions.append(SQLCondition(SQLFields.APP_NAME, self.app._sqlIO.appName))
 
-        rs = self.app.sqlIO.getHistory(conditions=conditions)
+        rs = self.app._sqlIO.getHistory(conditions=conditions)
 
         for r in rs:
-            await self.app.deleteMessage_History_ByRecord(record=r)
+            await self.app._deleteMessage_History_ByRecord(record=r)
 
         now = datetime.now(tz=g.ZONE)
         if 7 <= now.hour and now.hour <= 23:
