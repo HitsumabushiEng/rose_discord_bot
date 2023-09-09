@@ -18,11 +18,12 @@ import discord
 from discord.ext import commands
 
 from myLib.L2_SystemIO.discordIO import BotMixin
-import myLib.L2_SystemIO.discordIO as cogs
-
-import myLib.L1_Apps.apps as apps
 
 from myLib.L2_SystemIO.sql import SQL, pinSQL, bunnySQL
+
+import myLib.L2_SystemIO.discordIO as cogs
+import myLib.L1_Apps.apps as apps
+
 import myLib.L1_Apps.setting as g
 
 #########################################
@@ -54,9 +55,6 @@ intents.reactions = True
 intents.guilds = True
 client = commands.Bot(command_prefix=g.BOT_PREFIX, intents=intents)
 
-################TEMP###############
-cogs.setClient(client)
-################TEMP###############
 
 # クライアントを使ってBotMixinをインスタンス化
 bot = BotMixin(client=client)

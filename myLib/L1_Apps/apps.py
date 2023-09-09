@@ -1,9 +1,7 @@
-from typing import Union, Optional, Sequence
+from typing import Sequence
 
 ##
 import discord
-from discord.ext import commands
-
 from datetime import datetime
 
 ##
@@ -11,7 +9,7 @@ from myLib.L0_Core.historyIF import record, HistoryIF
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
 from myLib.L0_Core.messageIF import MessageIF
 
-from myLib.L2_SystemIO.sql import SQL, bunnySQL
+from myLib.L2_SystemIO.sql import bunnySQL
 
 import myLib.L1_Apps.setting as g
 
@@ -197,83 +195,3 @@ class BunnyTimerApp(myApp):
         if content is not None:
             msg = await self._botIO.sendMessage(gID=g_id, chID=chID, content=content)
             bunnySQL.insert_record(post=msg, cue=None)
-
-
-################################################
-# ここから下を削除する
-################################################
-
-#########################################
-# Receive client from main function.
-#########################################
-client: commands.Bot
-
-
-def setClient(_client: commands.Bot):
-    global client
-    client = _client
-
-
-#########################################
-# Functions
-#########################################
-
-
-# イベントペイロードからメッセージを取得
-async def get_message_by_payload(
-    payload: Union[
-        discord.RawMessageUpdateEvent,
-        discord.RawReactionActionEvent,
-    ],
-) -> Optional[discord.Message]:
-    try:
-        message = (
-            await client.get_guild(payload.guild_id)
-            .get_channel(payload.channel_id)
-            .fetch_message(payload.message_id)
-        )
-    except:
-        message = None
-    return message
-
-
-# レコードからメッセージを取得
-async def get_message_by_record(
-    r: record, isPost: bool = True
-) -> Optional[discord.Message]:
-    g_id = r.guildID
-
-    if isPost:
-        ch_id = g.guild_channel_map[g_id]
-        m_id = r.postID
-    else:
-        ch_id = r.cueChID
-        m_id = r.cueID
-
-    try:
-        message = await client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
-    except:
-        message = None
-
-    return message
-
-
-########### Clear
-
-"""
-# Clear all posts
-async def clear_guild_all_post(g_id):
-    records = SQL.select_guild_all_records(g_id)
-    for r in records:
-        await delete_post_by_record(r, POST=True, DB=True)
-"""
-
-"""
-async def delete_post_by_record(r: record, POST=False, DB=False):
-    if POST:
-        message = await get_message_by_record(r, isPost=True)
-        if message is not None:
-            await message.delete()
-    if DB:
-        SQL.delete_record_by_post_message(m_id=r.postID, g_id=r.guildID)
-"""

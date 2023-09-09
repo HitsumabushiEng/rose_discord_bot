@@ -105,27 +105,41 @@ stop
 + on_raw_reaction_clear
 + on_raw_reaction_clear_emoji
 
-|Condition        |        |                   |             |OUTPUT  |
-|:---:            |:---:   |:---:              |:---:        |:---:   |
-|History(post)    | emoji  | # of reactions    | Keyword     |Action  |
-|                 |        |                   |             |        |
-|exist            | -      | # = 0             | -           | unseal |
-|^                | ^      | # > 1             | -           | -      |
-|not exist        | !=check| -                 | -           | -      |
-|^                | =check | #CheckReaction >1 | -           | -      |
-|^                | ^      | #CheckReaction =0 | in contents | pinToChannel |
-|^                | ^      | ^                 | No          | -      |
+|Condition        |             |        |                   |             |OUTPUT  |
+|:---:            |:---:        |:---:   |:---:              |:---:        |:---:   |
+|History(post)    | Post or Cue | emoji  | # of reactions    | Keyword     |Action  |
+|                 |             |        |                   |             |        |
+|exist            | Post        | -      | # = 0             | -           | unseal |
+|^                | ^           | ^      | # > 1             | -           | -      |
+|^                | Cue         | -      | -                 | -           | -      |
+|not exist        | -           | !=check| -                 | -           | -      |
+|^                | ^           | =check or unknown | #CheckReaction >1 | -           | -      |
+|^                | ^           | ^      | #CheckReaction =0 | in contents | pinToChannel |
+|^                | ^           | ^      | ^                 | No          | -      |
 
 ```plantuml
 !pragma useVerticalIf off
 start
-:fetch History (post) of Message;
-if (History exist?) then (No)
-  if (emoji=check?) then (No)
-    stop
-  else (Yes)
+:fetch History of (post/cue) Message;
+if (History of post exist?) then (Yes)
+:fetch post Message;
+if ( # of Reaction = 0?) then (No)
+  stop
+else(Yes)
+:unseal;
+endif
+stop
+(No) elseif (History of cue exist?) then (Yes)
+  stop  
+else(No)
+  if (EVENT TYPE = reaction_clear?) then (No)
+    if (emoji=check?) then (No)
+      stop
+    else (Yes)
+    endif
+  else(Yes)
   endif
-  :fetch Message;
+  :fetch reacted Message;
   if ( # of Check Reaction = 0?) then (No)
     stop
   else (Yes)
@@ -136,12 +150,4 @@ if (History exist?) then (No)
   :pinToChannel;
   endif
   stop
-else(Yes)
-:fetch Message;
-if ( # of Reaction = 0?) then (No)
-  stop
-else(Yes)
-:unseal;
-endif
-stop
 ```

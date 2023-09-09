@@ -61,6 +61,7 @@ package Discord_OUT{
         + sendMessage()
         + editMessage()
         + deleteMessage()
+        + getMessage()
         + getMessage_ByRecord()
     }
 }
@@ -184,6 +185,7 @@ interface MessageIF{
     + sendMessage()
     + editMessage()
     + deleteMessage()
+    + getMessage()
     + getMessage_ByRecord()
 }
 
