@@ -8,13 +8,11 @@ from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta
 import re
 
-from discord.guild import Guild
 
 ##
 from myLib.L0_Core.messageIF import MessageIF
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields, record
 
-from myLib.L2_SystemIO.sql import SQL, bunnySQL, pinSQL
 import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
 
@@ -83,13 +81,27 @@ class BotMixin(MessageIF):
             m_id = r.cueID
 
         try:
-            message = (
+            _msg = (
                 await self.client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
             )
         except:
-            message = None
+            _msg = None
 
-        return message
+        return _msg
+
+    async def getMessage(
+        self,
+        g_id: discord.Guild.id,
+        ch_id: discord.TextChannel.id,
+        m_id: discord.Member.id,
+    ) -> Optional[discord.Message]:
+        try:
+            _msg = (
+                await self.client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
+            )
+        except:
+            _msg = None
+        return _msg
 
 
 #########################################
@@ -173,7 +185,9 @@ class AutoPinEventHandler(DiscordEventHandler):
     # メッセージ編集時に動作する処理
     @commands.Cog.listener()
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
-        message = await apps.get_message_by_payload(payload)
+        message = await self.app._botIO.getMessage(
+            g_id=payload.guild_id, ch_id=payload.channel_id, m_id=payload.message_id
+        )
         await self._message_event_handler(message)
         return
 
@@ -209,7 +223,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             case x if x.postID == payload.message_id:
                 post = await self.app._botIO.getMessage_ByRecord(r=record)
                 if (
-                    isFirstReactionAdd(post)
+                    self._isFirstReactionAdd(post)
                     and record.appName == self.app._sqlIO.appName
                 ):
                     cue = await self.app._botIO.getMessage_ByRecord(
@@ -234,48 +248,20 @@ class AutoPinEventHandler(DiscordEventHandler):
             case _:
                 return
 
-    ###############################################
-    ##############ここからやる######################
-    ###############################################
-
     # リアクション削除に対して反応
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
-        ## ここから完了チェック
-        try:
-            message = await self.client.get_channel(payload.channel_id).fetch_message(
-                payload.message_id
-            )
-        except:
-            message = None
-        if message is not None:
-            if (
-                (payload.emoji in g.EMOJI_CHECK)
-                and (payload.user_id == message.author.id)
-                and await isNoUserCheckReactions(message, payload.user_id)
-            ):
-                await self._message_event_handler(message)
-
-        ## ここから黒塗りチェック
-        if (
-            payload.channel_id == g.guild_channel_map[payload.guild_id]
-        ):  # なくてもいいけど、あればHTTPリクエストなしでフィルタできる。
-            message = await apps.get_message_by_payload(payload)
-            if message.author == self.client.user and isNullReaction(message):
-                _r = pinSQL.select_record_by_post_message(
-                    m_id=message.id, g_id=message.guild.id
-                )
-                if _r is not None:
-                    cue = await self.app._botIO.getMessage_ByRecord(_r, isPost=False)
-                    await autoPin.unseal(target=message, base=cue)
+        await self._reaction_remove_event_handler(payload=payload)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_clear(self, payload):
-        print("on_raw_reaction_clear")
+    async def on_raw_reaction_clear_emoji(
+        self, payload: discord.RawReactionClearEmojiEvent
+    ):
+        await self._reaction_remove_event_handler(payload=payload)
 
     @commands.Cog.listener()
-    async def on_raw_reaction_clear_emoji(self, payload):
-        print("on_raw_reaction_clear_emoji")
+    async def on_raw_reaction_clear(self, payload: discord.RawReactionClearEvent):
+        await self._reaction_remove_event_handler(payload=payload)
 
     # クリアコマンド
     @commands.command()
@@ -299,17 +285,27 @@ class AutoPinEventHandler(DiscordEventHandler):
 
         if now.weekday() % 7 == g.CLEAN_DAY and g.CLEAN_ACTIVE:  # 決まった曜日のみ実行
             print("定期動作作動")
-            records = SQL.select_records_before_yesterday()
+
+            conditions = []
+            conditions.append(SQLCondition(field=SQLFields.CREATED_AT, condition=None))
+            records = self.app._sqlIO.getHistory(conditions=conditions)
+
+            print(records)
+
             for r in records:
-                message = await self.app._botIO.getMessage_ByRecord(r, isPost=True)
-                if (message is not None) and (
-                    not isNullReaction(message)
-                ):  # Reactionが0じゃなかったら
-                    await self.app._deleteMessage_History_ByRecord(record=r)
+                msg = await self.app._botIO.getMessage_ByRecord(r, isPost=True)
+
+                if msg is None:
+                    self.app.deleteHistory_ByRecord(record=r)
+                elif not self._isNullReaction(msg):
+                    await self.app.unpin(record=r, msg=msg)
                     print("削除 : ", r)
         else:
             pass
 
+    #########################################
+    # Local methods
+    #########################################
     async def _message_event_handler(self, _cue: discord.Message):
         #
         # See decision table and flow chart bellow
@@ -323,7 +319,7 @@ class AutoPinEventHandler(DiscordEventHandler):
         conditions = []
         conditions.append(SQLCondition(SQLFields.CUE_ID, _cue.id))
         conditions.append(SQLCondition(SQLFields.GUILD_ID, _cue.guild.id))
-        _record = pinSQL().getHistory(conditions=conditions)
+        _record = self.app._sqlIO.getHistory(conditions=conditions)
 
         if _record is not None:
             post = await self.app._botIO.getMessage_ByRecord(_record)
@@ -335,7 +331,7 @@ class AutoPinEventHandler(DiscordEventHandler):
             else:
                 return
 
-        if await isUserCheckReactions(_cue, _cue.author.id):
+        if await self._isUserCheckReactions(_cue):
             if _record is not None:  # UNPIN
                 await self.app.unpin(_record, post)
                 return
@@ -343,7 +339,7 @@ class AutoPinEventHandler(DiscordEventHandler):
                 return
 
         if _record is not None:
-            if isNullReaction(post):  # UNSEAL
+            if self._isNullReaction(post):  # UNSEAL
                 await self.app.unseal(target=post, base=_cue)
                 return
             else:  # SEAL
@@ -352,6 +348,80 @@ class AutoPinEventHandler(DiscordEventHandler):
 
         await self.app.pinToChannel(_cue)  # pin to Channel
         return
+
+    async def _reaction_remove_event_handler(
+        self,
+        payload: Union[
+            discord.RawReactionActionEvent,
+            discord.RawReactionClearEmojiEvent,
+            discord.RawReactionClearEvent,
+        ],
+    ):
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
+        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.CUE_ID, payload.message_id))
+        record = self.app._sqlIO.getHistory(conditions=conditions)
+
+        match record:
+            case None:  # ピンされていないメッセージのリアクションが削除された->pinToChannel判定
+                match type(payload):
+                    case discord.RawReactionActionEvent | discord.RawReactionClearEmojiEvent:
+                        if not (payload.emoji in g.EMOJI_CHECK):  # pin to channel
+                            return
+                    case _:  # RawReactionClearEvent
+                        pass
+
+                cue = await self.app._botIO.getMessage(
+                    g_id=payload.guild_id,
+                    ch_id=payload.channel_id,
+                    m_id=payload.message_id,
+                )
+                if not await self._isUserCheckReactions(cue):
+                    if any((s in cue.content) for s in g.KEYWORDS_PIN):
+                        await self.app.pinToChannel(cue=cue)
+                        return
+                    else:
+                        return
+                else:
+                    return
+            case x if x.postID == payload.message_id:  # Postのリアクションが削除された->unseal判定
+                post = await self.app._botIO.getMessage_ByRecord(record)
+                if self._isNullReaction(post):
+                    cue = await self.app._botIO.getMessage_ByRecord(
+                        record, isPost=False
+                    )
+                    await self.app.unseal(target=post, base=cue)
+                    return
+                else:
+                    return
+            case x if x.cueID == payload.message_id:
+                return
+            case _:
+                return
+
+    @staticmethod
+    async def _isUserCheckReactions(message: discord.Message) -> bool:
+        _user = message.author.id
+        for r in message.reactions:
+            reaction_users = [u.id async for u in r.users()]
+            if any((s in r.emoji) for s in g.KEYWORDS_CHECK):
+                if _user in reaction_users:
+                    return True
+        return False
+
+    # Reactionチェック
+    @staticmethod
+    def _isNullReaction(message) -> bool:
+        return not bool(message.reactions)
+
+    @staticmethod
+    def _isFirstReactionAdd(message) -> bool:
+        return len(message.reactions) == 1 and message.reactions[0].count == 1
+
+    ###############################################
+    ##############ここからやる######################
+    ###############################################
 
 
 class BunnyTimerEventHandler(DiscordEventHandler):
@@ -445,48 +515,3 @@ class BunnyTimerEventHandler(DiscordEventHandler):
             await self.app.post_bunny(ctx.guild.id, dt_next, seq)
         else:
             await self.app.post_bunny(ctx.guild.id, dt_next, seq="suspend")
-
-
-################TEMP###############
-client: commands.Bot
-autoPin: apps.AutoPinApp
-
-
-def setClient(c: commands.Bot):
-    global client
-    global autoPin
-    client = c
-    apps.setClient(client)
-    autoPin = apps.AutoPinApp(pinSQL(), BotMixin(client=client))
-
-
-################TEMP###############
-
-
-#########################################
-# Local Functions
-#########################################
-
-
-async def isUserCheckReactions(message: discord.Message, user: discord.User.id) -> bool:
-    for r in message.reactions:
-        reaction_users = [u.id async for u in r.users()]
-        if any((s in r.emoji) for s in g.KEYWORDS_CHECK):
-            if user in reaction_users:
-                return True
-    return False
-
-
-async def isNoUserCheckReactions(
-    message: discord.Message, user: discord.User.id
-) -> bool:
-    return not await isUserCheckReactions(message=message, user=user)
-
-
-# Reactionチェック
-def isNullReaction(message) -> bool:
-    return not bool(message.reactions)
-
-
-def isFirstReactionAdd(message) -> bool:
-    return len(message.reactions) == 1 and message.reactions[0].count == 1

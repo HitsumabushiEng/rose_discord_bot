@@ -36,3 +36,12 @@ class MessageIF(metaclass=ABCMeta):
         self, r: record, isPost: bool = True
     ) -> Optional[discord.Message]:
         pass
+
+    @abstractmethod
+    async def getMessage(
+        self,
+        g_id: discord.Guild.id,
+        ch_id: discord.TextChannel.id,
+        m_id: discord.Member.id,
+    ) -> Optional[discord.Message]:
+        pass
