@@ -59,8 +59,19 @@ class BotMixin(MessageIF):
                 )
 
     @staticmethod
-    async def editMessage(target: discord.Message, embeds: [discord.Embed]):
-        await target.edit(embeds=embeds)
+    async def editMessage(
+        target: discord.Message,
+        content: Optional[discord.Message.content] = None,
+        embeds: Optional[list[discord.Embed]] = None,
+    ):
+        if content is None and embeds is None:
+            return
+        elif content is None:
+            return await target.edit(embeds=embeds)
+        elif embeds is None:
+            return await target.edit(content=content)
+        else:
+            return await target.edit(content=content, embeds=embeds)
 
     @staticmethod
     async def deleteMessage(msg: discord.Message):
@@ -479,24 +490,26 @@ class BunnyTimerEventHandler(DiscordEventHandler):
     async def usagi_loop(self, ctx: commands.Context, seq: int):
         match seq:
             case self.app.BunnySeq.ON_BUNNY.value:
-                # 次のタイマーをセットし
+                # 次のタイマー時間を計算し
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(minutes=10)
                 next = self.convert_datetime_to_time(dt_next)
-                self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, self.app.BunnySeq.INTERVAL.value)
-
                 # (いつまで)ウサギがいることを伝える。
                 await self.app.inform_bunny(g_id=ctx.guild.id, dt_next=dt_next)
 
+                # 次のタイマーをセットする
+                self.usagi_loop.change_interval(time=next)
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.INTERVAL.value)
+
             case self.app.BunnySeq.INTERVAL.value:
-                # 次にウサギが来る時間を設定して
+                # 次にウサギが来る時間を計算して
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(hours=1, minutes=30)
                 next = self.convert_datetime_to_time(dt_next)
-                self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
-
                 # 次にウサギが来る時間を知らせる
                 await self.app.inform_next(g_id=ctx.guild.id, dt_next=dt_next)
+
+                # 次のタイマーをセットする
+                self.usagi_loop.change_interval(time=next)
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
 
             case _:
                 self.usagi_loop.cancel()

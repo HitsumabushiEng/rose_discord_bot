@@ -23,7 +23,11 @@ class MessageIF(metaclass=ABCMeta):
 
     @staticmethod
     @abstractmethod
-    async def editMessage(target: discord.Message, embeds: [discord.Embed]):
+    async def editMessage(
+        target: discord.Message,
+        content: Optional[discord.Message.content] = None,
+        embeds: Optional[list[discord.Embed]] = None,
+    ):
         pass
 
     @staticmethod

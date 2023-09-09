@@ -169,6 +169,8 @@ class BunnyTimerApp(myApp):
         ON_BUNNY = auto()
         SUSPEND = auto()
 
+    _prevMessage: discord.Message = None
+
     async def set_bunny():
         pass
 
@@ -215,14 +217,12 @@ class BunnyTimerApp(myApp):
             t_list = re.split("[:：]", t_str.group())
             t_delta = timedelta(hours=float(t_list[0]), minutes=float(t_list[1]))
             dt_next = datetime.now(tz=g.ZONE) + t_delta
-            print(dt_next)
             return dt_next
         else:
             return None
 
     async def post_bunny(self, g_id: discord.Guild.id, dt_next: datetime, seq: int):
         chID = g.guild_channel_map[g_id]
-        # await self.delete_guild_bunny_message(g_id=g_id)
 
         diff_date = dt_next.date() - datetime.now(tz=g.ZONE).date()
         match diff_date.days:
@@ -242,15 +242,25 @@ class BunnyTimerApp(myApp):
                 content = g.INFO_NEXT_BUNNY.format(
                     date_str, dt_next.strftime(g.BUNNY_TIME_FORMAT)
                 )
+                if self._prevMessage is None:
+                    self._prevMessage = await self._botIO.sendMessage(
+                        gID=g_id, chID=chID, content=content
+                    )
+                    self._sqlIO.setHistory(post=self._prevMessage)
+                else:
+                    self._prevMessage = await self._botIO.editMessage(
+                        target=self._prevMessage, content=content
+                    )
+
             case self.BunnySeq.ON_BUNNY.value:
+                await self.delete_guild_bunny_message(g_id=g_id)
                 content = g.INFO_BUNNY_NOW
+                self._prevMessage = await self._botIO.sendMessage(
+                    gID=g_id, chID=chID, content=content
+                )
+                self._sqlIO.setHistory(post=self._prevMessage)
 
             case self.BunnySeq.SUSPEND.value:
                 content = None
             case _:
                 content = None
-
-        if content is not None:
-            msg = await self._botIO.client.get_channel(chID).send(content=content)
-            # msg = await self._botIO.sendMessage(gID=g_id, chID=chID, content=content)
-            self._sqlIO.setHistory(post=msg)
