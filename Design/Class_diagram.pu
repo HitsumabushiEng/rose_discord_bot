@@ -235,7 +235,7 @@ DiscordEventListener     <|--    BunnyTimerEventHandler
 
 
 ' relation in package Apps
-myApp           <|--    AdminApp
+myApp           <|-    AdminApp
 myApp           <|-    AutoPinApp
 myApp           <|-    BunnyTimerApp
 

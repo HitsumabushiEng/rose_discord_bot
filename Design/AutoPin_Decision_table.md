@@ -58,7 +58,7 @@ endif
 stop
 ```
 
-## Reaction Event Handler
+## Reaction Add Event Handler
 
 + on_raw_reaction_add
 
@@ -100,6 +100,8 @@ else(Yes)
 :Seal;
 stop
 ```
+
+## Reaction Remove Event Handler
 
 + on_raw_reaction_remove
 + on_raw_reaction_clear

@@ -211,6 +211,11 @@ class AutoPinEventHandler(DiscordEventHandler):
     # リアクション追加に対して反応
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        #
+        # See decision table and flow chart bellow
+        # Design\AutoPin_Decision_table.md
+        #
+
         conditions = []
         conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
         conditions.append(SQLCondition(SQLFields.CUE_ID, payload.message_id))
@@ -311,7 +316,6 @@ class AutoPinEventHandler(DiscordEventHandler):
         # See decision table and flow chart bellow
         # Design\AutoPin_Decision_table.md
         #
-        # 投稿済みレコードの検索
 
         if _cue.author.bot:
             return
@@ -357,6 +361,10 @@ class AutoPinEventHandler(DiscordEventHandler):
             discord.RawReactionClearEvent,
         ],
     ):
+        #
+        # See decision table and flow chart bellow
+        # Design\AutoPin_Decision_table.md
+        #
         conditions = []
         conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
         conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
