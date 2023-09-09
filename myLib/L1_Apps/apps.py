@@ -1,7 +1,12 @@
-from typing import Sequence
+from typing import Sequence, Optional
+import re
+from datetime import datetime, time, timedelta
+from enum import Enum, auto
+
 
 ##
 import discord
+from discord.ext import commands
 from datetime import datetime
 
 ##
@@ -25,7 +30,7 @@ class myApp:
     def __del__(self) -> None:
         pass
 
-    async def _deleteMessage_History_ByRecord(self, record: record):
+    async def deleteMessage_History_ByRecord(self, record: record):
         msg = await self._botIO.getMessage_ByRecord(record, isPost=True)
         if msg is not None:
             await self._botIO.deleteMessage(msg=msg)
@@ -110,7 +115,7 @@ class AutoPinApp(myApp):
 
         if records is not None:
             for r in records:
-                await self._deleteMessage_History_ByRecord(record=r)
+                await self.deleteMessage_History_ByRecord(record=r)
 
     # Private methods
     async def _gen_embed_from_message(
@@ -159,6 +164,11 @@ class AutoPinApp(myApp):
 
 
 class BunnyTimerApp(myApp):
+    class BunnySeq(Enum):
+        INTERVAL = auto()
+        ON_BUNNY = auto()
+        SUSPEND = auto()
+
     async def set_bunny():
         pass
 
@@ -171,27 +181,76 @@ class BunnyTimerApp(myApp):
     async def end_bunny():
         pass
 
-    async def inform_next():
-        pass
+    async def inform_next(self, g_id: discord.Guild.id, dt_next: datetime):
+        await self.post_bunny(
+            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.INTERVAL.value
+        )
 
-    async def inform_bunny():
-        pass
+    async def inform_bunny(self, g_id: discord.Guild.id, dt_next: datetime):
+        await self.post_bunny(
+            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.ON_BUNNY.value
+        )
 
-    async def post_bunny(self, g_id: discord.Guild.id, dt_next: datetime, seq: str):
+    async def inform_suspend(self, g_id: discord.Guild.id, dt_next: datetime, seq: int):
+        await self.post_bunny(
+            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.SUSPEND.value
+        )
+
+    async def delete_guild_bunny_message(self, g_id: discord.Guild.id):
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, g_id))
+        conditions.append(SQLCondition(SQLFields.APP_NAME, self._sqlIO.appName))
+
+        rs = self._sqlIO.getHistory(conditions=conditions)
+        for r in rs:
+            await self.deleteMessage_History_ByRecord(record=r)
+
+    @staticmethod
+    def parse_next_time(content: discord.Message.content) -> Optional[datetime]:
+        t_str = re.search(
+            r"([0-9 ０-９]){0,1}[0-9 ０-９]{1}[:：][0-5 ０-５]{0,1}[0-9 ０-９]{1}",
+            content,
+        )
+        if t_str is not None:
+            t_list = re.split("[:：]", t_str.group())
+            t_delta = timedelta(hours=float(t_list[0]), minutes=float(t_list[1]))
+            dt_next = datetime.now(tz=g.ZONE) + t_delta
+            print(dt_next)
+            return dt_next
+        else:
+            return None
+
+    async def post_bunny(self, g_id: discord.Guild.id, dt_next: datetime, seq: int):
         chID = g.guild_channel_map[g_id]
+        # await self.delete_guild_bunny_message(g_id=g_id)
+
+        diff_date = dt_next.date() - datetime.now(tz=g.ZONE).date()
+        match diff_date.days:
+            case 0:
+                date_str = g.INFO_DATE_EXPRESSION_TODAY
+            case 1:
+                date_str = g.INFO_DATE_EXPRESSION_TOMORROW
+            case 2:
+                date_str = g.INFO_DATE_EXPRESSION_DAY_AFTER_TOMORROW
+            case 3:
+                date_str = g.INFO_DATE_EXPRESSION_3DAYS
+            case _:
+                date_str = g.INFO_DATE_EXPRESSION_UNKNOWN
 
         match seq:
-            case "interval":
+            case self.BunnySeq.INTERVAL.value:
                 content = g.INFO_NEXT_BUNNY.format(
-                    dt_next.strftime(g.BUNNY_TIME_FORMAT)
+                    date_str, dt_next.strftime(g.BUNNY_TIME_FORMAT)
                 )
-            case "on_bunny":
+            case self.BunnySeq.ON_BUNNY.value:
                 content = g.INFO_BUNNY_NOW
-            case "suspend":
+
+            case self.BunnySeq.SUSPEND.value:
                 content = None
             case _:
                 content = None
 
         if content is not None:
-            msg = await self._botIO.sendMessage(gID=g_id, chID=chID, content=content)
-            bunnySQL.insert_record(post=msg, cue=None)
+            msg = await self._botIO.client.get_channel(chID).send(content=content)
+            # msg = await self._botIO.sendMessage(gID=g_id, chID=chID, content=content)
+            self._sqlIO.setHistory(post=msg)

@@ -1,6 +1,5 @@
 import asyncio
 from typing import Union, Optional
-from enum import Enum, auto
 
 ##
 import discord
@@ -427,10 +426,6 @@ class AutoPinEventHandler(DiscordEventHandler):
     def _isFirstReactionAdd(message) -> bool:
         return len(message.reactions) == 1 and message.reactions[0].count == 1
 
-    ###############################################
-    ##############ここからやる######################
-    ###############################################
-
 
 class BunnyTimerEventHandler(DiscordEventHandler):
     def __init__(self, bot: commands.Bot, app: apps.BunnyTimerApp):
@@ -441,29 +436,31 @@ class BunnyTimerEventHandler(DiscordEventHandler):
     @commands.command()
     async def usagi(self, ctx: commands.Context):
         if "stop" in ctx.message.content:
-            await self.bunny_message_manage(ctx, datetime.now(), "suspend")
+            # delete message and history
+            await self.app.delete_guild_bunny_message(g_id=ctx.guild.id)
+            # inform suspend
+            await self.app.inform_suspend(
+                g_id=ctx.guild.id,
+                dt_next=datetime.now(tz=g.ZONE),
+                seq=self.app.BunnySeq.SUSPEND.value,
+            )  # 現状、なにもなし
+            # process cancel
             self.usagi_loop.cancel()
 
         else:
-            t_str = re.search(
-                r"([0-2 ０-２]){0,1}[0-9 ０-９]{1}[:：][0-5 ０-５]{0,1}[0-9 ０-９]{1}",
-                ctx.message.content,
-            )
-            if t_str is not None:
-                t_list = re.split("[:：]", t_str.group())
-                t_delta = timedelta(hours=float(t_list[0]), minutes=float(t_list[1]))
-                dt_next = datetime.now(tz=g.ZONE) + t_delta
+            # get next datetime from message
+            dt_next = self.app.parse_next_time(content=ctx.message.content)
 
-                next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=g.ZONE)
-
+            if dt_next is not None:
+                next = self.convert_datetime_to_time(dt_next)
+                # activate process with next "time"
                 self.usagi_loop.change_interval(time=next)
-
-                await self.app.post_bunny(ctx.guild.id, dt_next, seq="interval")
-
-                try:
-                    self.usagi_loop.start(ctx, "on_bunny")
-                except:
-                    self.usagi_loop.restart(ctx, "on_bunny")
+                if not bool(self.usagi_loop.next_iteration):
+                    self.usagi_loop.start(ctx, self.app.BunnySeq.ON_BUNNY.value)
+                else:
+                    self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
+                # inform
+                await self.app.inform_next(g_id=ctx.guild.id, dt_next=dt_next)
 
             else:
                 msg = await ctx.send(g.CAUTION_COMMAND_ERROR)
@@ -478,48 +475,33 @@ class BunnyTimerEventHandler(DiscordEventHandler):
     # 定期実行ルーチン
     #########################################
 
-    # @tasks.loop(seconds=10, reconnect=True, count=3)
     @tasks.loop(hours=30, reconnect=True, count=5)
-    async def usagi_loop(self, ctx: commands.Context, seq: str):
+    async def usagi_loop(self, ctx: commands.Context, seq: int):
         match seq:
-            case "on_bunny":
+            case self.app.BunnySeq.ON_BUNNY.value:
+                # 次のタイマーをセットし
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(minutes=10)
-                # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=1)
-                next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=g.ZONE)
-
-                await self.bunny_message_manage(ctx, dt_next, seq)
-
+                next = self.convert_datetime_to_time(dt_next)
                 self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, "interval")
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.INTERVAL.value)
 
-            case "interval":
+                # (いつまで)ウサギがいることを伝える。
+                await self.app.inform_bunny(g_id=ctx.guild.id, dt_next=dt_next)
+
+            case self.app.BunnySeq.INTERVAL.value:
+                # 次にウサギが来る時間を設定して
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(hours=1, minutes=30)
-                # dt_next = datetime.now(tz=ZONE) + timedelta(minutes=2)
-                next = time(hour=dt_next.hour, minute=dt_next.minute, tzinfo=g.ZONE)
-
-                await self.bunny_message_manage(ctx, dt_next, seq)
-
+                next = self.convert_datetime_to_time(dt_next)
                 self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, "on_bunny")
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
+
+                # 次にウサギが来る時間を知らせる
+                await self.app.inform_next(g_id=ctx.guild.id, dt_next=dt_next)
 
             case _:
                 self.usagi_loop.cancel()
                 print(g.ERROR_MESSAGE.format("うさぎタイマー"))
 
-    async def bunny_message_manage(
-        self, ctx: commands.Context, dt_next: datetime, seq: str
-    ):
-        conditions = []
-        conditions.append(SQLCondition(SQLFields.GUILD_ID, ctx.guild.id))
-        conditions.append(SQLCondition(SQLFields.APP_NAME, self.app._sqlIO.appName))
-
-        rs = self.app._sqlIO.getHistory(conditions=conditions)
-
-        for r in rs:
-            await self.app._deleteMessage_History_ByRecord(record=r)
-
-        now = datetime.now(tz=g.ZONE)
-        if 7 <= now.hour and now.hour <= 23:
-            await self.app.post_bunny(ctx.guild.id, dt_next, seq)
-        else:
-            await self.app.post_bunny(ctx.guild.id, dt_next, seq="suspend")
+    @staticmethod
+    def convert_datetime_to_time(dt: datetime) -> time:
+        return time(hour=dt.hour, minute=dt.minute, tzinfo=g.ZONE)
