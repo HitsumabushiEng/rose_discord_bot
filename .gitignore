@@ -168,6 +168,3 @@ cython_debug/
 # ignore plant uml outputs
 out/Design/*
 
-# ignore Sourcetrail files
-*.srctrl*
-
