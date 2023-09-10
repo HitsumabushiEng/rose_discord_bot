@@ -32,7 +32,7 @@ class DiscordEventHandler(commands.Cog):
 
         if _record is not None:
             if _record.appName == self.app._sqlIO.appName:
-                await self.app.message_deleted(payload, _record)
+                await self.app.maintenance_when_message_deleted(payload, _record)
 
 
 #########################################
@@ -56,14 +56,14 @@ class AdminEventHandler(DiscordEventHandler):
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
-        await self.app.clearGuildAllMessage_History(g_id=guild.id)
+        await self.app.clear_guild_all_Message_History(g_id=guild.id)
         self.app.deregister_guild(guild.id)
 
     @commands.command()
     @commands.has_permissions(manage_messages=True)
     async def clear_all(self, ctx: commands.Context):
         if ctx.message.content == g.BOT_PREFIX + "clear_all":  # コマンドだけに限定。
-            await self.app.clearGuildAllMessage_History(ctx.guild.id)
+            await self.app.clear_guild_all_Message_History(ctx.guild.id)
             msg = await ctx.send("--- all posts cleared ---")
             await asyncio.sleep(g.COMMAND_FB_TIME)
             await ctx.message.delete()
@@ -116,7 +116,7 @@ class AutoPinEventHandler(DiscordEventHandler):
 
         if _record is not None:
             if _record.appName == self.app._sqlIO.appName:
-                await self.app.message_deleted(payload, _record)
+                await self.app.maintenance_when_message_deleted(payload, _record)
 
     # リアクション追加に対して反応
     @commands.Cog.listener()
@@ -375,7 +375,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
             dt_next = self.app.parse_next_time(content=ctx.message.content)
 
             if dt_next is not None:
-                next = self.convert_datetime_to_time(dt_next)
+                next = self._convert_datetime_to_time(dt_next)
                 # activate process with next "time"
                 self.usagi_loop.change_interval(time=next)
                 if not bool(self.usagi_loop.next_iteration):
@@ -404,7 +404,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
             case self.app.BunnySeq.ON_BUNNY:
                 # 次のタイマー時間を計算し
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(minutes=10)
-                next = self.convert_datetime_to_time(dt_next)
+                next = self._convert_datetime_to_time(dt_next)
                 # (いつまで)ウサギがいることを伝える。
                 await self.app.inform_bunny(g_id=ctx.guild.id, dt_next=dt_next)
 
@@ -415,7 +415,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
             case self.app.BunnySeq.INTERVAL:
                 # 次にウサギが来る時間を計算して
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(hours=1, minutes=30)
-                next = self.convert_datetime_to_time(dt_next)
+                next = self._convert_datetime_to_time(dt_next)
                 # 次にウサギが来る時間を知らせる
                 await self.app.inform_next(g_id=ctx.guild.id, dt_next=dt_next)
 
@@ -428,5 +428,5 @@ class BunnyTimerEventHandler(DiscordEventHandler):
                 print(g.ERROR_MESSAGE.format("うさぎタイマー"))
 
     @staticmethod
-    def convert_datetime_to_time(dt: datetime) -> time:
+    def _convert_datetime_to_time(dt: datetime) -> time:
         return time(hour=dt.hour, minute=dt.minute, tzinfo=g.ZONE)

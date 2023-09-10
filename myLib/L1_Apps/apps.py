@@ -34,7 +34,7 @@ class myApp:
     def deleteHistory_ByRecord(self, record: record):
         return self._sqlIO.deleteHistory_ByRecord(record=record)
 
-    async def message_deleted(
+    async def maintenance_when_message_deleted(
         self, payload: discord.RawMessageDeleteEvent, record: record
     ):
         match payload.message_id:
@@ -63,7 +63,7 @@ class AdminApp(myApp):
     def deregister_guild(_gid: discord.Guild.id):
         del g.guild_channel_map[_gid]
 
-    async def clearGuildAllMessage_History(self, g_id):
+    async def clear_guild_all_Message_History(self, g_id):
         conditions = []
         conditions.append(SQLCondition(field=SQLFields.GUILD_ID, condition=g_id))
         records = self._sqlIO.getHistory(conditions=conditions)
@@ -121,7 +121,7 @@ class AutoPinApp(myApp):
             for r in records:
                 await self.deleteMessage_History_ByRecord(record=r)
 
-    async def message_deleted(
+    async def maintenance_when_message_deleted(
         self, payload: discord.RawMessageDeleteEvent, record: record
     ):
         match payload.message_id:
@@ -220,7 +220,7 @@ class BunnyTimerApp(myApp):
         for g_id in g.guild_channel_map.keys():
             self.guild_prevMessage_map[g_id] = await self.get_prev_message(g_id=g_id)
 
-    async def message_deleted(
+    async def maintenance_when_message_deleted(
         self, payload: discord.RawMessageDeleteEvent, record: record
     ):
         match payload.message_id:

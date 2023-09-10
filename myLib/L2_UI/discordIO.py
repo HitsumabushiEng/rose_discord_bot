@@ -12,7 +12,7 @@ from myLib.L0_Core.dataTypes import record
 import myLib.L1_Apps.setting as g
 
 
-class BotMixin(MessageIF):
+class myBot(MessageIF):
     client: commands.Bot
 
     def __init__(self, client: commands.Bot) -> None:

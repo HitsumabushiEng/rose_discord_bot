@@ -18,7 +18,7 @@ import discord
 from discord.ext import commands
 
 from myLib.L2_SystemIO.sql import SQL, pinSQL, bunnySQL
-from myLib.L2_UI.discordIO import BotMixin
+from myLib.L2_UI.discordIO import myBot
 import myLib.L2_UI.cogs as cogs
 
 import myLib.L1_Apps.apps as apps
@@ -55,9 +55,9 @@ client = commands.Bot(command_prefix=g.BOT_PREFIX, intents=intents)
 
 
 # クライアントを使ってBotMixinをインスタンス化
-bot = BotMixin(client=client)
+bot = myBot(client=client)
 
-# BotMixinを使ってアプリをインスタンス化
+# Bot client と アプリ毎のSQL IFを使ってアプリをインスタンス化
 adminApp = apps.AdminApp(sqlIO=SQL(), botIO=bot)
 autoPinApp = apps.AutoPinApp(sqlIO=pinSQL(), botIO=bot)
 bunnyApp = apps.BunnyTimerApp(sqlIO=bunnySQL(), botIO=bot)

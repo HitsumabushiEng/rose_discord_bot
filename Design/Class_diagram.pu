@@ -1,6 +1,6 @@
 @startuml class
 title Rose
-package Discord{
+package Discord.py{
     class DiscordServer{
         ---
         + login()
@@ -55,8 +55,9 @@ package Discord{
     }
 }
 
-package Discord_OUT{
-    class BotMixin{
+package discordIO{
+    class myBot{
+        - client
         ---
         + sendMessage()
         + editMessage()
@@ -66,11 +67,13 @@ package Discord_OUT{
     }
 }
 
-package DiscordEventHandler{
+package Cogs{
 
-    class DiscordEventListener{
+    class DiscordEventHandler{
         - client
         - app
+        ---
+        + on_raw_message_delete()
     }
 
     class AdminEventHandler{
@@ -93,17 +96,28 @@ package DiscordEventHandler{
         + on_raw_message_delete()
         + on_raw_reaction_add()
         + on_raw_reaction_remove()
-
+        + on_raw_reaction_clear_emoji()
+        + on_raw_reaction_clear()
         + command.clear()
         + tasks.loop.clean()
-        - __message_event_handler
+
+        - message_event_handler()
+        - reaction_remove_event_handler()
+        - isUserCheckReactions()
+        - isNullReaction()
+        - isFirstReactionAdd()
+
     }
     class BunnyTimerEventHandler{
         - client
         - app
         ---
+        + on_ready()
+        + on_guild_remove()
+
         + command.usagi()
         + tasks.loop.usagi_loop()
+        - convert_datetime_to_time()
     }
 }
 
@@ -112,15 +126,18 @@ package Apps{
         - HistoryIF
         - MessageIF
         ---
+        - __init__()
         + deleteMessage_History_ByRecord()
         + deleteHistory_ByRecord()
+        + maintenance_when_message_deleted()
     }
 
     class AdminApp{
         ---
         + register_all_guilds()
         + register_guild()
-        + clear_guild_all_post()
+        + deregister_guild()
+        + clear_guild_all_Message_History()
     }
 
     class AutoPinApp{
@@ -131,6 +148,7 @@ package Apps{
         + seal()
         + unseal()
         + clear_user_guild_post()
+        + maintenance_when_message_deleted()
         - gen_embed_from_message()
     }
 
@@ -138,13 +156,17 @@ package Apps{
         - seq : string
         - next : time
         ---
-        + set_bunny()
-        + reset_bunny()
-        + catch_bunny()
-        + end_bunny()
-
         + inform_next()
         + inform_bunny()
+        + inform_suspend()
+        + delete_guild_bunny_message()
+        + init_prev_message_map()
+        + register_prev_message()
+        + deregister_prev_message()
+        + get_prev_message()
+        + parse_next_time()
+        + maintenance_when_message_deleted()
+        + post_bunny()
     }
 }
 
@@ -156,6 +178,7 @@ package SQL_IO{
         + getHistory()
         + setHistory()
         + deleteHistory()
+        + deleteHistory_ByRecord()
         - insert_record()
         - select_guild_all_records()
         - select_user_guild_records()
@@ -190,6 +213,7 @@ interface MessageIF{
 }
 
 interface HistoryIF{
+    - appName
     ---
     + init()
     + getHistory()
@@ -206,6 +230,7 @@ package History <<database>>{
         - created_at : datetime
         - author : int
         - guild : int
+        - appName : str
         ---
     }
 }
@@ -221,7 +246,7 @@ package History <<database>>{
 ''''''''''''''''''''''''''''
 ' relation internal package
 ''''''''''''''''''''''''''''
-' relation in package Discord
+' relation in package Discord.py
 DiscordServer   *-      Guild
 Guild           *-      Channel
 Channel         *-      Message
@@ -229,9 +254,9 @@ Message         *-      Embed
 Message         *-      Reaction
 
 ' relation in package DiscordEventHandler
-DiscordEventListener     <|--    AdminEventHandler
-DiscordEventListener     <|--    AutoPinEventHandler
-DiscordEventListener     <|--    BunnyTimerEventHandler
+DiscordEventHandler     <|-    AdminEventHandler
+DiscordEventHandler     <|-    AutoPinEventHandler
+DiscordEventHandler     <|-    BunnyTimerEventHandler
 
 
 ' relation in package Apps
@@ -247,9 +272,12 @@ SQL            <|-     bunnySQL
 ''''''''''''''''''''''''''''
 ' relation over package
 ''''''''''''''''''''''''''''
-' relation btw. Discord and DiscordEventHandler
-Discord         <--     BotMixin : use
-Discord         -->     DiscordEventListener : call
+' relation btw. Discord.py and DiscordEventHandler
+Channel         <--     myBot : use
+
+Discord.py         -->     AdminEventHandler: call
+Discord.py         -->     AutoPinEventHandler: call
+Discord.py         -->     BunnyTimerEventHandler: call
 
 
 ' relation btw. DiscordEventHandler and Apps
@@ -268,7 +296,7 @@ HistoryIF       <|..    SQL
 myApp           -->     HistoryIF : use
 
 ' MessageIF
-BotMixin        ..|>    MessageIF
+myBot        ..|>    MessageIF
 
 MessageIF       <--     myApp : use
 
