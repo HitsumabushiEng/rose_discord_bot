@@ -28,7 +28,6 @@ CLEAN_DAY = 1  # 0:月曜日、1:火曜日
 
 # うさぎさんタイマー用
 BUNNY_TIMER_ACTIVE = True  # 自動削除を行うか否か
-# NEXT_BUNNY = time(hour=4, minute=0, second=0, tzinfo=ZONE)  # 次回ウサギが来る時間変数
 
 
 #########################################
