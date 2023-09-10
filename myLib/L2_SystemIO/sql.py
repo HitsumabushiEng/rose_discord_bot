@@ -142,7 +142,7 @@ class Queries(Enum):
 # Super Class
 #########################################
 class SQL(HistoryIF):
-    appName = AppNames.DEFAULT
+    appName = AppNames.DEFAULT.value
 
     def __init__(self) -> None:
         pass
