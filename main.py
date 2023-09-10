@@ -25,9 +25,9 @@ import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
 
 #########################################
-DEBUG_MODE = "Earnest_dev"
+# DEBUG_MODE = "Earnest_dev"
 # DEBUG_MODE = "Rose_dev"
-# DEBUG_MODE = "Deploy"
+DEBUG_MODE = "Deploy"
 
 # TOKENの設定
 match DEBUG_MODE:
