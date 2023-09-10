@@ -17,13 +17,11 @@ import os
 import discord
 from discord.ext import commands
 
-from myLib.L2_SystemIO.discordIO import BotMixin
-
 from myLib.L2_SystemIO.sql import SQL, pinSQL, bunnySQL
+from myLib.L2_UI.discordIO import BotMixin
+import myLib.L2_UI.cogs as cogs
 
-import myLib.L2_SystemIO.discordIO as cogs
 import myLib.L1_Apps.apps as apps
-
 import myLib.L1_Apps.setting as g
 
 #########################################

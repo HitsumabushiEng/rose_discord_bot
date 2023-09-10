@@ -1,20 +1,15 @@
 from typing import Sequence, Optional
-import re
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from enum import Enum, auto
-
+import re
 
 ##
 import discord
-from discord.ext import commands
-from datetime import datetime
 
 ##
 from myLib.L0_Core.historyIF import record, HistoryIF
 from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
 from myLib.L0_Core.messageIF import MessageIF
-
-from myLib.L2_SystemIO.sql import bunnySQL
 
 import myLib.L1_Apps.setting as g
 
@@ -34,7 +29,7 @@ class myApp:
         msg = await self._botIO.getMessage_ByRecord(record, isPost=True)
         if msg is not None:
             await self._botIO.deleteMessage(msg=msg)
-        self._sqlIO.deleteHistory_ByRecord(record=record)
+        self.deleteHistory_ByRecord(record=record)
 
     def deleteHistory_ByRecord(self, record: record):
         return self._sqlIO.deleteHistory_ByRecord(record=record)
@@ -84,13 +79,13 @@ class AutoPinApp(myApp):
 
     async def unpin(self, record: record, msg: discord.Message):
         await self._botIO.deleteMessage(msg=msg)
-        self._sqlIO.deleteHistory_ByRecord(record=record)
+        self.deleteHistory_ByRecord(record=record)
 
     async def unpin_ByRecord(self, record: record):
         msg = await self._botIO.getMessage_ByRecord(record, isPost=True)
         if msg is not None:
             await self._botIO.deleteMessage(msg=msg)
-        self._sqlIO.deleteHistory_ByRecord(record=record)
+        self.deleteHistory_ByRecord(record=record)
 
     async def seal(
         self, target: discord.Message, base: discord.Message, isSeal: bool = True
@@ -169,7 +164,7 @@ class BunnyTimerApp(myApp):
         ON_BUNNY = auto()
         SUSPEND = auto()
 
-    _prevMessage: discord.Message = None
+    guild_prevMessage_map = {}
 
     async def set_bunny():
         pass
@@ -184,19 +179,13 @@ class BunnyTimerApp(myApp):
         pass
 
     async def inform_next(self, g_id: discord.Guild.id, dt_next: datetime):
-        await self.post_bunny(
-            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.INTERVAL.value
-        )
+        await self.post_bunny(g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.INTERVAL)
 
     async def inform_bunny(self, g_id: discord.Guild.id, dt_next: datetime):
-        await self.post_bunny(
-            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.ON_BUNNY.value
-        )
+        await self.post_bunny(g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.ON_BUNNY)
 
     async def inform_suspend(self, g_id: discord.Guild.id, dt_next: datetime, seq: int):
-        await self.post_bunny(
-            g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.SUSPEND.value
-        )
+        await self.post_bunny(g_id=g_id, dt_next=dt_next, seq=self.BunnySeq.SUSPEND)
 
     async def delete_guild_bunny_message(self, g_id: discord.Guild.id):
         conditions = []
@@ -207,6 +196,33 @@ class BunnyTimerApp(myApp):
         for r in rs:
             await self.deleteMessage_History_ByRecord(record=r)
 
+    async def init_prev_message_map(self):
+        for g_id in g.guild_channel_map.keys():
+            self.guild_prevMessage_map[g_id] = await self.get_prev_message(g_id=g_id)
+
+    def deleteHistory_ByRecord(self, record: record):
+        self.deregister_prev_message(g_id=record.guildID)
+        return self._sqlIO.deleteHistory_ByRecord(record=record)
+
+    def register_prev_message(self, g_id, msg):
+        self.guild_prevMessage_map[g_id] = msg
+
+    def deregister_prev_message(self, g_id):
+        self.guild_prevMessage_map[g_id] = None
+
+    async def get_prev_message(
+        self, g_id: discord.Guild.id
+    ) -> Optional[discord.Message]:
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, g_id))
+        conditions.append(SQLCondition(SQLFields.APP_NAME, self._sqlIO.appName))
+
+        rs = self._sqlIO.getHistory(conditions=conditions)
+        if len(rs) is not 0:
+            return await self._botIO.getMessage_ByRecord(rs[-1])
+        else:
+            return None
+
     @staticmethod
     def parse_next_time(content: discord.Message.content) -> Optional[datetime]:
         t_str = re.search(
@@ -216,12 +232,19 @@ class BunnyTimerApp(myApp):
         if t_str is not None:
             t_list = re.split("[:：]", t_str.group())
             t_delta = timedelta(hours=float(t_list[0]), minutes=float(t_list[1]))
+            cycle_time = timedelta(hours=1, minutes=40)
+
+            # 最初のウサギだったら、1周期分時間を短縮しておく。
+            if t_delta > cycle_time:
+                t_delta = t_delta - cycle_time
             dt_next = datetime.now(tz=g.ZONE) + t_delta
             return dt_next
         else:
             return None
 
-    async def post_bunny(self, g_id: discord.Guild.id, dt_next: datetime, seq: int):
+    async def post_bunny(
+        self, g_id: discord.Guild.id, dt_next: datetime, seq: BunnySeq
+    ):
         chID = g.guild_channel_map[g_id]
 
         diff_date = dt_next.date() - datetime.now(tz=g.ZONE).date()
@@ -238,29 +261,36 @@ class BunnyTimerApp(myApp):
                 date_str = g.INFO_DATE_EXPRESSION_UNKNOWN
 
         match seq:
-            case self.BunnySeq.INTERVAL.value:
+            case self.BunnySeq.INTERVAL:
                 content = g.INFO_NEXT_BUNNY.format(
                     date_str, dt_next.strftime(g.BUNNY_TIME_FORMAT)
                 )
-                if self._prevMessage is None:
-                    self._prevMessage = await self._botIO.sendMessage(
+
+                if g_id in self.guild_prevMessage_map.keys():
+                    prev = self.guild_prevMessage_map[g_id]
+                else:
+                    prev = None  # guildで初めてのウサギメッセージ
+
+                if prev is None:
+                    prev = await self._botIO.sendMessage(
                         gID=g_id, chID=chID, content=content
                     )
-                    self._sqlIO.setHistory(post=self._prevMessage)
+                    self._sqlIO.setHistory(post=prev)
                 else:
-                    self._prevMessage = await self._botIO.editMessage(
-                        target=self._prevMessage, content=content
-                    )
+                    prev = await self._botIO.editMessage(target=prev, content=content)
+                self.register_prev_message(g_id=g_id, msg=prev)
 
-            case self.BunnySeq.ON_BUNNY.value:
+            case self.BunnySeq.ON_BUNNY:
                 await self.delete_guild_bunny_message(g_id=g_id)
                 content = g.INFO_BUNNY_NOW
-                self._prevMessage = await self._botIO.sendMessage(
+
+                prev = await self._botIO.sendMessage(
                     gID=g_id, chID=chID, content=content
                 )
                 self._sqlIO.setHistory(post=self._prevMessage)
+                self.register_prev_message(g_id=g_id, msg=prev)
 
-            case self.BunnySeq.SUSPEND.value:
-                content = None
+            case self.BunnySeq.SUSPEND:
+                pass
             case _:
-                content = None
+                pass

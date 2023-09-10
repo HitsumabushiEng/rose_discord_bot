@@ -1,117 +1,17 @@
 import asyncio
-from typing import Union, Optional
+from typing import Union
 
 ##
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta
-import re
 
 
 ##
-from myLib.L0_Core.messageIF import MessageIF
-from myLib.L0_Core.dataTypes import SQLCondition, SQLFields, record
+from myLib.L0_Core.dataTypes import SQLCondition, SQLFields
 
 import myLib.L1_Apps.apps as apps
 import myLib.L1_Apps.setting as g
-
-
-class BotMixin(MessageIF):
-    client: commands.Bot
-
-    def __init__(self, client: commands.Bot) -> None:
-        self.client = client
-        pass
-
-    def __del__(self) -> None:
-        pass
-
-    async def sendMessage(
-        self,
-        gID: discord.Guild.id,
-        chID: discord.TextChannel.id,
-        content: Union[str, discord.Embed, list[discord.Embed]],
-    ) -> discord.Message:
-        match type(content):
-            case x if x is str:
-                return (
-                    await self.client.get_guild(gID)
-                    .get_channel(chID)
-                    .send(content=content)
-                )
-            case x if x is discord.Embed:
-                return (
-                    await self.client.get_guild(gID)
-                    .get_channel(chID)
-                    .send(embed=content)
-                )
-            case x if x is list:
-                return (
-                    await self.client.get_guild(gID)
-                    .get_channel(chID)
-                    .send(embeds=content)
-                )
-            case _:
-                return (
-                    await self.client.get_guild(gID)
-                    .get_channel(chID)
-                    .send(content=content)
-                )
-
-    @staticmethod
-    async def editMessage(
-        target: discord.Message,
-        content: Optional[discord.Message.content] = None,
-        embeds: Optional[list[discord.Embed]] = None,
-    ):
-        if content is None and embeds is None:
-            return
-        elif content is None:
-            return await target.edit(embeds=embeds)
-        elif embeds is None:
-            return await target.edit(content=content)
-        else:
-            return await target.edit(content=content, embeds=embeds)
-
-    @staticmethod
-    async def deleteMessage(msg: discord.Message):
-        if msg is not None:
-            await msg.delete()
-
-    async def getMessage_ByRecord(
-        self, r: record, isPost: bool = True
-    ) -> Optional[discord.Message]:
-        g_id = r.guildID
-
-        if isPost:
-            ch_id = g.guild_channel_map[g_id]
-            m_id = r.postID
-        else:
-            ch_id = r.cueChID
-            m_id = r.cueID
-
-        try:
-            _msg = (
-                await self.client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
-            )
-        except:
-            _msg = None
-
-        return _msg
-
-    async def getMessage(
-        self,
-        g_id: discord.Guild.id,
-        ch_id: discord.TextChannel.id,
-        m_id: discord.Member.id,
-    ) -> Optional[discord.Message]:
-        try:
-            _msg = (
-                await self.client.get_guild(g_id).get_channel(ch_id).fetch_message(m_id)
-            )
-        except:
-            _msg = None
-        return _msg
 
 
 #########################################
@@ -121,6 +21,22 @@ class DiscordEventHandler(commands.Cog):
     def __init__(self, bot: commands.Bot, app: apps.myApp):
         self.client = bot
         self.app = app
+
+    # BOTメッセージが削除された場合に反応
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        conditions = []
+        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
+        _record = self.app._sqlIO.getHistory(conditions=conditions)
+
+        if _record is not None:
+            if _record.appName is self.app._sqlIO.appName:
+                match payload.message_id:
+                    case _record.postID:  # 削除メッセージがPOSTの場合の処理
+                        self.app.deleteHistory_ByRecord(record=_record)
+                    case _:
+                        pass
 
 
 #########################################
@@ -159,20 +75,12 @@ class AdminEventHandler(DiscordEventHandler):
         else:
             pass
 
-    # BOTメッセージが削除された場合に反応
-    @commands.Cog.listener()
-    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
-        conditions = []
-        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
-        conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
-        _record = self.app._sqlIO.getHistory(conditions=conditions)
 
-        if _record is not None:
-            match payload.message_id:
-                case _record.postID:  # 削除メッセージがPOSTの場合の処理
-                    self.app.deleteHistory_ByRecord(record=_record)
-                case _:
-                    pass
+#    @commands.command()
+#    @commands.has_permissions(manage_messages=True)
+#    async def clear_all(self, ctx: commands.Context):
+#        if ctx.message.content == g.BOT_PREFIX + "clear_all":  # コマンドだけに限定。
+#            self.app.deregister_prev_message(g_id=ctx.guild.id)
 
 
 class AutoPinEventHandler(DiscordEventHandler):
@@ -443,17 +351,29 @@ class BunnyTimerEventHandler(DiscordEventHandler):
         self.client = bot
         self.app = app
 
+    # 起動時に動作する処理
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.app.init_prev_message_map()
+        return
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild):
+        self.app.deregister_prev_message(g_id=guild.id)
+
     # ウサギさんタイマーコマンド
     @commands.command()
     async def usagi(self, ctx: commands.Context):
         if "stop" in ctx.message.content:
             # delete message and history
-            await self.app.delete_guild_bunny_message(g_id=ctx.guild.id)
+            g_id = ctx.guild.id
+            await self.app.delete_guild_bunny_message(g_id=g_id)
+            self.app.deregister_prev_message(g_id=g_id)
             # inform suspend
             await self.app.inform_suspend(
-                g_id=ctx.guild.id,
+                g_id=g_id,
                 dt_next=datetime.now(tz=g.ZONE),
-                seq=self.app.BunnySeq.SUSPEND.value,
+                seq=self.app.BunnySeq.SUSPEND,
             )  # 現状、なにもなし
             # process cancel
             self.usagi_loop.cancel()
@@ -467,9 +387,9 @@ class BunnyTimerEventHandler(DiscordEventHandler):
                 # activate process with next "time"
                 self.usagi_loop.change_interval(time=next)
                 if not bool(self.usagi_loop.next_iteration):
-                    self.usagi_loop.start(ctx, self.app.BunnySeq.ON_BUNNY.value)
+                    self.usagi_loop.start(ctx, self.app.BunnySeq.ON_BUNNY)
                 else:
-                    self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
+                    self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY)
                 # inform
                 await self.app.inform_next(g_id=ctx.guild.id, dt_next=dt_next)
 
@@ -487,9 +407,9 @@ class BunnyTimerEventHandler(DiscordEventHandler):
     #########################################
 
     @tasks.loop(hours=30, reconnect=True, count=5)
-    async def usagi_loop(self, ctx: commands.Context, seq: int):
+    async def usagi_loop(self, ctx: commands.Context, seq: apps.BunnyTimerApp.BunnySeq):
         match seq:
-            case self.app.BunnySeq.ON_BUNNY.value:
+            case self.app.BunnySeq.ON_BUNNY:
                 # 次のタイマー時間を計算し
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(minutes=10)
                 next = self.convert_datetime_to_time(dt_next)
@@ -498,9 +418,9 @@ class BunnyTimerEventHandler(DiscordEventHandler):
 
                 # 次のタイマーをセットする
                 self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, self.app.BunnySeq.INTERVAL.value)
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.INTERVAL)
 
-            case self.app.BunnySeq.INTERVAL.value:
+            case self.app.BunnySeq.INTERVAL:
                 # 次にウサギが来る時間を計算して
                 dt_next = datetime.now(tz=g.ZONE) + timedelta(hours=1, minutes=30)
                 next = self.convert_datetime_to_time(dt_next)
@@ -509,7 +429,7 @@ class BunnyTimerEventHandler(DiscordEventHandler):
 
                 # 次のタイマーをセットする
                 self.usagi_loop.change_interval(time=next)
-                self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY.value)
+                self.usagi_loop.restart(ctx, self.app.BunnySeq.ON_BUNNY)
 
             case _:
                 self.usagi_loop.cancel()
