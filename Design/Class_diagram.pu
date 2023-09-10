@@ -1,0 +1,276 @@
+@startuml class
+title Rose
+package Discord{
+    class DiscordServer{
+        ---
+        + login()
+    }
+
+    class Guild{
+        - id : int
+        - Channels:[Channel]
+        ---
+        + join()
+        + remove()
+    }
+
+    class Channel{
+        - id : int
+        - name : string
+        - Messages:[Message]
+        ---
+        + send()
+    }
+
+    class Message{
+        - id : int
+        - content : string
+        - embeds : [Embed]
+        - reactions : [Reaction]
+        - author : int
+        ---
+        + delete()
+        + edit()
+        + add_reaction()
+        + remove_reaction()
+    }
+
+    class Embed{
+        - color : Colour
+        - author.name : string
+        - author.icon_url : string
+        - field.name : string
+        - field.value : string
+        - image : Image
+        ---
+        + set_authour()
+        + add_field()
+        + set_image()
+    }
+
+    class Reaction{
+        - count : int
+        - emoji : string
+        ---
+    }
+}
+
+package Discord_OUT{
+    class BotMixin{
+        ---
+        + sendMessage()
+        + editMessage()
+        + deleteMessage()
+        + getMessage()
+        + getMessage_ByRecord()
+    }
+}
+
+package DiscordEventHandler{
+
+    class DiscordEventListener{
+        - client
+        - app
+    }
+
+    class AdminEventHandler{
+        - client
+        - app
+        ---
+        + on_ready()
+
+        + on_guild_join()
+        + on_guild_remove()
+        + command.clear_all()
+    }        
+    class AutoPinEventHandler{
+        - client
+        - app
+        ---
+        + on_ready()
+        + message_listener("on_message")
+        + on_raw_message_edit()
+        + on_raw_message_delete()
+        + on_raw_reaction_add()
+        + on_raw_reaction_remove()
+
+        + command.clear()
+        + tasks.loop.clean()
+        - __message_event_handler
+    }
+    class BunnyTimerEventHandler{
+        - client
+        - app
+        ---
+        + command.usagi()
+        + tasks.loop.usagi_loop()
+    }
+}
+
+package Apps{
+    class myApp{
+        - HistoryIF
+        - MessageIF
+        ---
+        + deleteMessage_History_ByRecord()
+        + deleteHistory_ByRecord()
+    }
+
+    class AdminApp{
+        ---
+        + register_all_guilds()
+        + register_guild()
+        + clear_guild_all_post()
+    }
+
+    class AutoPinApp{
+        ---
+        + pinToChannel()
+        + unpin()
+        + unpin_ByRecord()
+        + seal()
+        + unseal()
+        + clear_user_guild_post()
+        - gen_embed_from_message()
+    }
+
+    class BunnyTimerApp{
+        - seq : string
+        - next : time
+        ---
+        + set_bunny()
+        + reset_bunny()
+        + catch_bunny()
+        + end_bunny()
+
+        + inform_next()
+        + inform_bunny()
+    }
+}
+
+package SQL_IO{
+    class SQL{
+        - appName
+        ---
+        + init()
+        + getHistory()
+        + setHistory()
+        + deleteHistory()
+        - insert_record()
+        - select_guild_all_records()
+        - select_user_guild_records()
+        - select_record_by_post_message()
+        - select_records_before_yesterday()
+        - delete_record_by_post_message()
+    }
+    class pinSQL{
+        - appName
+        ---
+        + getHistory()
+        - select_record_by_cue_message()
+        - select_record_by_any_message()
+    }
+
+    class bunnySQL{
+        - appName
+        ---
+        + getHistory()
+        - select_guild_bunny_records()
+    }
+}
+
+interface MessageIF{
+    - client
+    ---
+    + sendMessage()
+    + editMessage()
+    + deleteMessage()
+    + getMessage()
+    + getMessage_ByRecord()
+}
+
+interface HistoryIF{
+    ---
+    + init()
+    + getHistory()
+    + setHistory()
+    + deleteHistory()
+    + deleteHistory_ByRecord()
+}
+
+package History <<database>>{
+    class record{
+        - post_message : int
+        - cue_message : int
+        - cue_message.ch : int
+        - created_at : datetime
+        - author : int
+        - guild : int
+        ---
+    }
+}
+
+
+'---Relations-------------------------
+
+'Type	        Symbol
+'Extension	    <|--	
+'Composition	*--	
+'Aggregation	o--	
+
+''''''''''''''''''''''''''''
+' relation internal package
+''''''''''''''''''''''''''''
+' relation in package Discord
+DiscordServer   *-      Guild
+Guild           *-      Channel
+Channel         *-      Message
+Message         *-      Embed
+Message         *-      Reaction
+
+' relation in package DiscordEventHandler
+DiscordEventListener     <|--    AdminEventHandler
+DiscordEventListener     <|--    AutoPinEventHandler
+DiscordEventListener     <|--    BunnyTimerEventHandler
+
+
+' relation in package Apps
+myApp           <|-    AdminApp
+myApp           <|-    AutoPinApp
+myApp           <|-    BunnyTimerApp
+
+' relation in package SQL_IO
+SQL            <|-     pinSQL
+SQL            <|-     bunnySQL
+
+
+''''''''''''''''''''''''''''
+' relation over package
+''''''''''''''''''''''''''''
+' relation btw. Discord and DiscordEventHandler
+Discord         <--     BotMixin : use
+Discord         -->     DiscordEventListener : call
+
+
+' relation btw. DiscordEventHandler and Apps
+AdminEventHandler        -->    AdminApp : use
+AutoPinEventHandler      -->    AutoPinApp : use
+BunnyTimerEventHandler   -->    BunnyTimerApp : use
+
+' relation btw. SQL_IO and database
+SQL_IO          -->     History : set/get
+
+''''''''''''''''''''''''''''
+' relation Interfaces
+''''''''''''''''''''''''''''
+' HistoryIF
+HistoryIF       <|..    SQL
+myApp           -->     HistoryIF : use
+
+' MessageIF
+BotMixin        ..|>    MessageIF
+
+MessageIF       <--     myApp : use
+
+
+@enduml
