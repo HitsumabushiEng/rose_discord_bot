@@ -31,12 +31,8 @@ class DiscordEventHandler(commands.Cog):
         _record = self.app._sqlIO.getHistory(conditions=conditions)
 
         if _record is not None:
-            if _record.appName is self.app._sqlIO.appName:
-                match payload.message_id:
-                    case _record.postID:  # 削除メッセージがPOSTの場合の処理
-                        self.app.deleteHistory_ByRecord(record=_record)
-                    case _:
-                        pass
+            if _record.appName == self.app._sqlIO.appName:
+                await self.app.message_deleted(payload, _record)
 
 
 #########################################
@@ -112,19 +108,15 @@ class AutoPinEventHandler(DiscordEventHandler):
     # メッセージが削除された場合に反応
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
-        # POSTはAdmin クラスで処理。
-        # CUEに対応
         conditions = []
         conditions.append(SQLCondition(SQLFields.CUE_ID, payload.message_id))
+        conditions.append(SQLCondition(SQLFields.POST_ID, payload.message_id))
         conditions.append(SQLCondition(SQLFields.GUILD_ID, payload.guild_id))
         _record = self.app._sqlIO.getHistory(conditions=conditions)
 
-        if _record is not None:  # UNPIN後はレコードも消されているためNone
-            match payload.message_id:
-                case _record.cueID:  # 削除メッセージがCUEの場合の処理
-                    await self.app.unpin_ByRecord(record=_record)
-                case _:
-                    pass
+        if _record is not None:
+            if _record.appName == self.app._sqlIO.appName:
+                await self.app.message_deleted(payload, _record)
 
     # リアクション追加に対して反応
     @commands.Cog.listener()

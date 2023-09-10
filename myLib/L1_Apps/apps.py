@@ -34,6 +34,15 @@ class myApp:
     def deleteHistory_ByRecord(self, record: record):
         return self._sqlIO.deleteHistory_ByRecord(record=record)
 
+    async def message_deleted(
+        self, payload: discord.RawMessageDeleteEvent, record: record
+    ):
+        match payload.message_id:
+            case record.postID:  # 削除メッセージがPOSTの場合の処理
+                self.deleteHistory_ByRecord(record=record)
+            case _:
+                pass
+
 
 class AdminApp(myApp):
     @classmethod
@@ -62,7 +71,7 @@ class AdminApp(myApp):
         for r in records:
             msg = await self._botIO.getMessage_ByRecord(r=r, isPost=True)
             await self._botIO.deleteMessage(msg=msg)
-            self._sqlIO.deleteHistory_ByRecord(record=r)
+            self.deleteHistory_ByRecord(record=r)
 
 
 class AutoPinApp(myApp):
@@ -111,6 +120,17 @@ class AutoPinApp(myApp):
         if records is not None:
             for r in records:
                 await self.deleteMessage_History_ByRecord(record=r)
+
+    async def message_deleted(
+        self, payload: discord.RawMessageDeleteEvent, record: record
+    ):
+        match payload.message_id:
+            case record.postID:  # 削除メッセージがPOSTの場合の処理
+                self.deleteHistory_ByRecord(record=record)
+            case record.cueID:  # 削除メッセージがCUEの場合の処理
+                await self.unpin_ByRecord(record=record)
+            case _:
+                pass
 
     # Private methods
     async def _gen_embed_from_message(
@@ -164,7 +184,7 @@ class BunnyTimerApp(myApp):
         ON_BUNNY = auto()
         SUSPEND = auto()
 
-    guild_prevMessage_map = {}
+    guild_prevMessage_map: dict[discord.Guild.id, discord.Message] = {}
 
     async def set_bunny():
         pass
@@ -200,9 +220,15 @@ class BunnyTimerApp(myApp):
         for g_id in g.guild_channel_map.keys():
             self.guild_prevMessage_map[g_id] = await self.get_prev_message(g_id=g_id)
 
-    def deleteHistory_ByRecord(self, record: record):
-        self.deregister_prev_message(g_id=record.guildID)
-        return self._sqlIO.deleteHistory_ByRecord(record=record)
+    async def message_deleted(
+        self, payload: discord.RawMessageDeleteEvent, record: record
+    ):
+        match payload.message_id:
+            case record.postID:  # 削除メッセージがPOSTの場合の処理
+                self.deregister_prev_message(g_id=record.guildID)
+                self.deleteHistory_ByRecord(record=record)
+            case _:
+                pass
 
     def register_prev_message(self, g_id, msg):
         self.guild_prevMessage_map[g_id] = msg
@@ -218,7 +244,7 @@ class BunnyTimerApp(myApp):
         conditions.append(SQLCondition(SQLFields.APP_NAME, self._sqlIO.appName))
 
         rs = self._sqlIO.getHistory(conditions=conditions)
-        if len(rs) is not 0:
+        if len(rs) != 0:
             return await self._botIO.getMessage_ByRecord(rs[-1])
         else:
             return None
@@ -271,6 +297,11 @@ class BunnyTimerApp(myApp):
                 else:
                     prev = None  # guildで初めてのウサギメッセージ
 
+                try:
+                    await prev.fetch()
+                except:
+                    prev = None
+
                 if prev is None:
                     prev = await self._botIO.sendMessage(
                         gID=g_id, chID=chID, content=content
@@ -287,7 +318,7 @@ class BunnyTimerApp(myApp):
                 prev = await self._botIO.sendMessage(
                     gID=g_id, chID=chID, content=content
                 )
-                self._sqlIO.setHistory(post=self._prevMessage)
+                self._sqlIO.setHistory(post=prev)
                 self.register_prev_message(g_id=g_id, msg=prev)
 
             case self.BunnySeq.SUSPEND:
